@@ -3,13 +3,13 @@ use crate::orderbook::Orderbook;
 use actix_http::ws::Item::*;
 use anyhow::{anyhow, Result};
 use awc::ws::Frame::*;
+use formatx::formatx;
 use futures_util::{SinkExt, StreamExt};
 use log::info;
 use std::vec::Vec;
 
 pub struct Exchange {
     name: String,
-    pairs: Vec<String>,
     client: awc::Client,
     level: u32,
     connection: Option<actix_codec::Framed<awc::BoxedSocket, awc::ws::Codec>>,
@@ -23,52 +23,55 @@ impl Exchange {
             .finish();
         Exchange {
             name: name.to_string(),
-            pairs: vec![],
             client,
             level: 10,
             connection: None,
             cache: "".to_string(),
         }
     }
-    pub async fn connect(&mut self) -> Result<()> {
-        let url = apitree::WS_APIMAP
+    pub async fn connect(&mut self, pairs: Vec<String>) -> Result<()> {
+        info!("start connect, {}", self.name);
+        let api = apitree::WS_APIMAP
             .get(&self.name)
-            .ok_or_else(|| anyhow!("Exchange not supported"))?
-            .endpoint;
-        let (result, conn) = self
+            .ok_or_else(|| anyhow!("Exchange not supported"))?;
+
+        let mut url = api.endpoint.to_string();
+        let render_url = api.render_url;
+        if render_url {
+            let p = pairs.join(",");
+
+            info!("render Url: {}", p);
+            url = formatx!(url, p).map_err(|e| anyhow!("{:?}", e))?;
+        }
+        info!("{}", url);
+
+        let (result, mut conn) = self
             .client
             .ws(url)
             .connect()
             .await
-            .map_err(|e| anyhow!("{:?}", e))?;
-        self.connection = Some(conn);
+            .map_err(|e| anyhow!("connection error: {:?}", e))?;
         info!("{:?}", result);
+        if !render_url {
+            for pair in pairs {
+                let request = api.subscribe_text(&pair, 20)?;
+                info!("{:?}", request);
+                conn.send(awc::ws::Message::Text(request.into()))
+                    .await
+                    .map(|e| info!("{:?}", e))
+                    .map_err(|e| anyhow!("{:?}", e))?;
+            }
+        }
+
+        self.connection = Some(conn);
         Ok(())
     }
-    pub async fn subscribe(&mut self, pair: &str) -> Result<()> {
-        self.pairs.push(pair.to_string());
-        if let Some(conn) = &mut self.connection {
-            let request = apitree::WS_APIMAP
-                .get(&self.name)
-                .ok_or_else(|| anyhow!("Exchange not supported"))?
-                .subscribe_text(pair, 20)?;
-            info!("{:?}", request);
-            conn.send(awc::ws::Message::Text(request.into()))
-                .await
-                .map(|_| ())
-                .map_err(|e| anyhow!("{:?}", e))
-        } else {
-            Err(anyhow!("Not connect yet. Please run connect first."))
-        }
-    }
     pub async fn next(&mut self) -> Result<Option<Orderbook>> {
-        if let Some(result) = self
+        let result = &mut self
             .connection
             .as_mut()
-            .ok_or_else(|| anyhow!("Not connect yet. Please run connect first"))?
-            .next()
-            .await
-        {
+            .ok_or_else(|| anyhow!("Not connect yet. Please run connect first"))?;
+        if let Some(result) = result.next().await {
             let raw = match result? {
                 Text(msg) => std::str::from_utf8(&msg)?.to_string(),
                 Binary(msg) => std::str::from_utf8(&msg)?.to_string(),

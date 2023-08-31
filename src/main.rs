@@ -6,16 +6,24 @@ mod exchange;
 mod orderbook;
 use crate::config::Config;
 use actix::{Actor, StreamHandler};
-use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
+use actix::{ActorContext, System};
+use actix_web::{middleware, web, App, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
+use actix_web_codegen::*;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use exchange::Exchange;
 use futures_util::{pin_mut, select, FutureExt, SinkExt, StreamExt};
 use log::{error, info};
 use orderbook::{AggregatedOrderbook, Orderbook};
+use std::collections::HashMap;
 use std::string::String;
+use std::sync::Arc;
 use std::vec::Vec;
+use tokio::sync::broadcast::{self, error::RecvError, Sender};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::task::JoinHandle;
+use tokio::task::JoinSet;
 
 fn setup_logger(
     log_file: Option<String>,
@@ -33,45 +41,128 @@ fn setup_logger(
     Ok(())
 }
 
-async fn setup_marketdata(exchange_pairs: Vec<(&str, &str)>) -> Result<()> {
-    for (exchange, pair) in exchange_pairs {
-        info!("loading {}: {}", exchange, pair);
-        let mut client = Exchange::new(exchange);
-        client.connect().await?;
-        client.subscribe(pair).await?;
-    }
-    Ok(())
-}
-
 struct Session;
+
+impl Session {
+    pub fn new(_tx: broadcast::Sender<String>) -> Self {
+        Self {}
+    }
+}
 
 impl Actor for Session {
     type Context = ws::WebsocketContext<Self>;
+    fn started(&mut self, ctx: &mut Self::Context) {}
 }
 
 type WsResult = Result<ws::Message, ws::ProtocolError>;
 
 impl StreamHandler<WsResult> for Session {
     fn handle(&mut self, msg: WsResult, ctx: &mut Self::Context) {
-        match msg {
-            Ok(ws::Message::Ping(p)) => ctx.pong(&p),
-            Ok(ws::Message::Text(text)) => ctx.text(text),
-            Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
+        if msg.is_err() {
+            ctx.stop();
+            return;
+        }
+
+        match msg.unwrap() {
+            ws::Message::Ping(p) => {
+                info!("ping {:?}", p);
+            }
+            ws::Message::Text(text) => {
+                info!("recv {}", text);
+                ctx.text(text);
+            }
+            ws::Message::Pong(_) => {
+                info!("pong");
+            }
+            ws::Message::Binary(bin) => {
+                info!("recv bin {:?}", bin);
+                ctx.binary(bin);
+            }
             _ => (),
+        }
+    }
+    fn finished(&mut self, _ctx: &mut Self::Context) {
+        info!("finished");
+    }
+}
+
+#[get("/ws")]
+async fn websocket(
+    req: HttpRequest,
+    stream: web::Payload,
+) -> Result<HttpResponse, actix_web::Error> {
+    let tx = req.app_data::<broadcast::Sender<String>>().unwrap();
+    let tx = tx.clone();
+    ws::start(Session::new(tx), &req, stream)
+}
+
+async fn executor(
+    exchange: String,
+    pairs: Vec<String>,
+    tx: UnboundedSender<(String, Orderbook)>,
+) -> Result<()> {
+    let mut client = Exchange::new(&exchange);
+    info!("start executor: {}", exchange);
+    client.connect(pairs).await?;
+    info!("connect {}", exchange);
+    // currently we only allow single subscription
+    loop {
+        match client.next().await {
+            Ok(Some(orderbook)) => {
+                tx.send((exchange.clone(), orderbook));
+            }
+            Ok(None) => {
+                info!("shutdown {}", exchange);
+                break;
+            }
+            Err(e) => {
+                error!("{}", e);
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn setup_marketdata(
+    exchange_pairs: HashMap<String, Vec<String>>,
+    tx: UnboundedSender<String>,
+) {
+    let (itx, mut irx) = unbounded_channel::<(String, Orderbook)>();
+    let mut exchange_cache = HashMap::<String, Orderbook>::with_capacity(exchange_pairs.len());
+    for (exchange, pairs) in exchange_pairs {
+        info!("loading {}: {:?}", exchange, pairs);
+        let ltx = itx.clone();
+        std::thread::spawn(move || {
+            let system = actix::System::new();
+            let runtime = system.runtime();
+            let result = runtime.block_on(executor(exchange.clone(), pairs.clone(), ltx));
+            if let Err(e) = result {
+                error!("exchange client spawn error: {}", e);
+            }
+        });
+    }
+    while let Some((exchange, orderbook)) = irx.recv().await {
+        let mut agg = AggregatedOrderbook::new();
+        exchange_cache.remove(&exchange);
+        exchange_cache.insert(exchange.clone(), orderbook);
+        for (_key, ob) in exchange_cache.iter() {
+            agg.merge(ob);
+        }
+        match agg.finalize(10) {
+            Ok(result) => {
+                let summary = serde_json::to_string(&result).unwrap();
+                if let Err(e) = tx.send(summary) {
+                    error!("{:?}", e);
+                }
+            }
+            Err(e) => {
+                error!("{:?}", e);
+            }
         }
     }
 }
 
-async fn listener(
-    req: HttpRequest,
-    stream: web::Payload,
-) -> Result<HttpResponse, actix_web::Error> {
-    let result = ws::start(Session {}, &req, stream);
-    info!("{:?}", result);
-    result
-}
-
-#[actix::main]
+#[tokio::main]
 async fn main() -> Result<()> {
     let mut config = Config::parse();
     println!("loading from {}", config.config_path);
@@ -84,9 +175,35 @@ async fn main() -> Result<()> {
         .bind_addr
         .unwrap_or_else(|| "0.0.0.0".to_string());
 
-    HttpServer::new(|| App::new().route("/ws/", web::get().to(listener)))
-        .bind((bind_addr, config.inner.server_port))?
-        .run()
-        .await
-        .map_err(|e| anyhow!("{:?}", e))
+    let (tx, mut rx) = unbounded_channel::<String>();
+    let (btx, mut brx) = broadcast::channel::<String>(20);
+    let cbtx = btx.clone();
+    tokio::spawn(async move {
+        while let Some(item) = rx.recv().await {
+            if let Err(e) = cbtx.send(item) {
+                error!("{:?}", e);
+            }
+        }
+    });
+    tokio::spawn(async move {
+        while let Ok(item) = brx.recv().await {
+            info!("Summary {:?}", item);
+        }
+    });
+    let server_port = config.inner.server_port;
+    let handler1 = tokio::spawn(setup_marketdata(config.inner.exchange_pair_map, tx));
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(btx.clone())
+            .service(websocket)
+            .wrap(middleware::Logger::default())
+    })
+    .bind((bind_addr, server_port))
+    .map_err(|e| anyhow!("{:?}", e))?
+    .run()
+    .await
+    .map_err(|e| anyhow!("{:?}", e))?;
+
+    Ok(())
 }

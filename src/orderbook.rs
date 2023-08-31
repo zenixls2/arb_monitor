@@ -10,7 +10,7 @@ pub enum Side {
     Ask,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Orderbook {
     pub(self) name: String,
     pub(self) bid: BTreeMap<BigDecimal, BigDecimal>,
@@ -24,8 +24,14 @@ impl Orderbook {
     }
     pub fn insert(&mut self, side: Side, price: BigDecimal, volume: BigDecimal) {
         match side {
-            Side::Bid => self.bid.insert(price, volume),
-            Side::Ask => self.ask.insert(price, volume),
+            Side::Bid => {
+                self.bid.remove(&price);
+                self.bid.insert(price, volume);
+            }
+            Side::Ask => {
+                self.ask.remove(&price);
+                self.ask.insert(price, volume);
+            }
         };
     }
     pub fn new(name: &str) -> Orderbook {

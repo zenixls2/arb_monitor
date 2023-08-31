@@ -3,10 +3,14 @@ use anyhow::{anyhow, Result};
 use bigdecimal::BigDecimal;
 use bigdecimal::FromPrimitive;
 use formatx::formatx;
+use log::info;
+use once_cell::sync::Lazy;
 use phf::phf_map;
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Mutex;
 
 type ParseFunc = fn(String) -> Result<Orderbook>;
 #[derive(Clone)]
@@ -16,6 +20,8 @@ pub struct Api {
     pub subscribe_template: &'static str,
     // raw String as input
     pub parse: ParseFunc,
+    // render url with data
+    pub render_url: bool,
 }
 
 impl Api {
@@ -103,6 +109,9 @@ fn bitstamp_parser(raw: String) -> Result<Orderbook> {
     Ok(ob)
 }
 
+static INDRESERVE: Lazy<Mutex<HashMap<String, Orderbook>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
 fn indreserve_parser(raw: String) -> Result<Orderbook> {
     #[derive(Deserialize, Debug)]
     #[serde(rename_all = "PascalCase")]
@@ -122,30 +131,107 @@ fn indreserve_parser(raw: String) -> Result<Orderbook> {
     #[derive(Deserialize, Debug)]
     #[serde(rename_all = "PascalCase")]
     struct WsEvent {
+        #[serde(default)]
         channel: String,
         data: Value,
         time: u64,
         event: String,
     }
     let result: WsEvent = serde_json::from_str(&raw).map_err(|e| anyhow!("{:?}", e))?;
-    if result.event != "OrderBookSnapshot" {
+    if result.event == "Subscriptions" {
+        let mut tmp = INDRESERVE.lock().unwrap();
+        let result: Vec<String> =
+            serde_json::from_value(result.data).map_err(|e| anyhow!("{:?}", e))?;
+        for channel in result {
+            tmp.insert(channel, Orderbook::new("independentreserve"));
+        }
+        return Ok(Orderbook::new("independentreserve"));
+    } else if result.event != "OrderBookSnapshot" && result.event != "OrderBookChange" {
         return Err(anyhow!("non-snapshot signal passed it"));
     }
-    let result: Snapshot = serde_json::from_value(result.data).map_err(|e| anyhow!("{:?}", e))?;
-    let mut ob = Orderbook::new("independentreserve");
-    for Unit { price, volume } in result.bids {
-        let p = BigDecimal::from_str(&format!("{}", price))
-            .map_err(|e| anyhow!("parse price fail: {} {:?}", price, e))?;
-        let v = BigDecimal::from_str(&format!("{}", volume))
-            .map_err(|e| anyhow!("parse volume fail: {} {:?}", volume, e))?;
-        ob.insert(Side::Bid, p, v);
+    let mut tmp = INDRESERVE.lock().unwrap();
+    if let Some(ob) = tmp.get_mut(&result.channel) {
+        let result: Snapshot =
+            serde_json::from_value(result.data).map_err(|e| anyhow!("{:?}", e))?;
+        for Unit { price, volume } in result.bids {
+            let p = BigDecimal::from_str(&format!("{}", price))
+                .map_err(|e| anyhow!("parse price fail: {} {:?}", price, e))?;
+            let v = BigDecimal::from_str(&format!("{}", volume))
+                .map_err(|e| anyhow!("parse volume fail: {} {:?}", volume, e))?;
+            ob.insert(Side::Bid, p, v);
+        }
+        for Unit { price, volume } in result.asks {
+            let p = BigDecimal::from_str(&format!("{}", price))
+                .map_err(|e| anyhow!("parse price fail: {} {:?}", price, e))?;
+            let v = BigDecimal::from_str(&format!("{}", volume))
+                .map_err(|e| anyhow!("parse volume fail: {} {:?}", volume, e))?;
+            ob.insert(Side::Ask, p, v);
+        }
+        Ok(ob.clone())
+    } else {
+        Err(anyhow!("orderbook not exist for {}", result.channel))
     }
-    for Unit { price, volume } in result.asks {
-        let p = BigDecimal::from_str(&format!("{}", price))
-            .map_err(|e| anyhow!("parse price fail: {} {:?}", price, e))?;
-        let v = BigDecimal::from_str(&format!("{}", volume))
-            .map_err(|e| anyhow!("parse volume fail: {} {:?}", volume, e))?;
-        ob.insert(Side::Ask, p, v);
+}
+
+fn btcmarkets_parser(raw: String) -> Result<Orderbook> {
+    #[derive(Deserialize, Debug)]
+    struct WsEvent {
+        bids: Vec<[String; 2]>,
+        asks: Vec<[String; 2]>,
+        #[serde(rename = "marketId")]
+        market_id: String,
+        #[serde(rename = "messageType")]
+        message_type: String,
+        timestamp: String,
+    }
+    let result: WsEvent = serde_json::from_str(&raw).map_err(|e| anyhow!("{:?}", e))?;
+    if result.message_type != "orderbook" {
+        return Ok(Orderbook::new("btcmarkets"));
+    }
+    let mut ob = Orderbook::new("btcmarkets");
+    for [price_str, quantity_str] in result.bids {
+        let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
+        let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+        ob.insert(Side::Bid, price, quantity);
+    }
+    for [price_str, quantity_str] in result.asks {
+        let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
+        let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+        ob.insert(Side::Ask, price, quantity);
+    }
+    Ok(ob)
+}
+
+fn coinjar_parser(raw: String) -> Result<Orderbook> {
+    #[derive(Deserialize, Debug)]
+    struct Payload {
+        #[serde(default)]
+        bids: Vec<[String; 2]>,
+        #[serde(default)]
+        asks: Vec<[String; 2]>,
+    }
+
+    #[derive(Deserialize, Debug)]
+    struct WsEvent {
+        topic: String,
+        event: String,
+        payload: Payload,
+    }
+    let result: WsEvent = serde_json::from_str(&raw).map_err(|e| anyhow!("{:?}", e))?;
+    if result.event != "init" && result.event != "update" {
+        return Ok(Orderbook::new("coinjar"));
+    }
+    let mut ob = Orderbook::new("coinjar");
+    let result = result.payload;
+    for [price_str, quantity_str] in result.bids {
+        let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
+        let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+        ob.insert(Side::Bid, price, quantity);
+    }
+    for [price_str, quantity_str] in result.asks {
+        let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
+        let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+        ob.insert(Side::Ask, price, quantity);
     }
     Ok(ob)
 }
@@ -156,22 +242,38 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
         endpoint: "wss://stream.binance.com:9443/ws",
         subscribe_template: r#"{{"id": 1, "method": "SUBSCRIBE", "params": ["{}@depth{}@100ms"]}}"#,
         parse: (binance_parser as ParseFunc),
+        render_url: false,
     },
     "binance_futures" => Api {
         endpoint: "wss://fstream.binance.com:9443/ws",
         subscribe_template: r#"{{"id":1, "method":"SUBSCRIBE", "params": ["{}@depth{}@100ms"]}}"#,
         parse: (binance_parser as ParseFunc),
+        render_url: false,
     },
     "bitstamp" => Api {
         endpoint: "wss://ws.bitstamp.net",
         subscribe_template: r#"{{"event":"bts:subscribe","data":{{"channel":"order_book_{}"}}}}"#,
         parse: (bitstamp_parser as ParseFunc),
+        render_url: false,
     },
     "independentreserve" => Api {
-        endpoint: "wss://websocekts.independentreserve.com/orderbook/depth/20",
+        endpoint: "wss://websockets.independentreserve.com/orderbook/20?subscribe={}",
         subscribe_template: r#"{{"Event": "Subscribe", "Data": ["{}"]}}"#,
         parse: (indreserve_parser as ParseFunc),
-    }
+        render_url: true,
+    },
+    "btcmarkets" => Api {
+        endpoint: "wss://socket.btcmarkets.net/v2",
+        subscribe_template: r#"{{"marketIds": ["{}"], "channels": ["orderbook"], "messageType": "subscribe"}}"#,
+        parse: (btcmarkets_parser as ParseFunc),
+        render_url: false,
+    },
+    "coinjar" => Api {
+        endpoint: "wss://feed.exchange.coinjar.com/socket/websocket",
+        subscribe_template: r#"{{"topic": "book:{}", "event": "phx_join", "payload": {{}}, "ref": 0}}"#,
+        parse: (coinjar_parser as ParseFunc),
+        render_url: false,
+    },
 };
 
 #[cfg(test)]
@@ -249,6 +351,11 @@ mod tests {
     #[test]
     fn test_indreserve_parse() {
         // subscription response
+        (super::WS_APIMAP.get("independentreserve").unwrap().parse)(
+            r#"{"Data": ["orderbook/5/btc/aud"], "Event": "Subscriptions", "Time": 1660895883834}"#
+                .to_string(),
+        )
+        .unwrap();
         let out = (super::WS_APIMAP.get("independentreserve").unwrap().parse)(
             r#"{"Channel": "orderbook/5/btc/aud","Data": {
                 "Bids": [{

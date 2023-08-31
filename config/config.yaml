@@ -1,8 +1,16 @@
 exchange_pair_map:
-  binance:
-    - btcusdt
-  bitstamp:
-    - btcusd
+  #binance:
+  #- btcusdt
+  #bitstamp:
+  #- btcusd
+  #independentreserve:
+  #  - Xbt-usd
+  #btcmarkets:
+  #  - BTC-AUD
+  #  #BTC-USDT is closed
+  coinjar:
+    - BTCAUD
+bind_addr: "127.0.0.1"
 server_addr: "127.0.0.1"
 server_port: 50051
 log_path: "test.log"
