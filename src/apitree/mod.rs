@@ -114,8 +114,8 @@ fn indreserve_parser(raw: String) -> Result<Option<Orderbook>> {
     #[derive(Deserialize, Debug)]
     #[serde(rename_all = "PascalCase")]
     struct Unit {
-        price: Value,
-        volume: Value,
+        price: f64,
+        volume: f64,
     }
     #[derive(Deserialize, Debug)]
     struct Snapshot {
@@ -196,6 +196,8 @@ fn btcmarkets_parser(raw: String) -> Result<Option<Orderbook>> {
     Ok(Some(ob))
 }
 
+static COINJAR: Lazy<Mutex<HashMap<String, Orderbook>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
 fn coinjar_parser(raw: String) -> Result<Option<Orderbook>> {
     #[derive(Deserialize, Debug)]
     struct Payload {
@@ -209,12 +211,20 @@ fn coinjar_parser(raw: String) -> Result<Option<Orderbook>> {
     struct WsEvent {
         event: String,
         payload: Payload,
+        topic: String,
     }
     let result: WsEvent = serde_json::from_str(&raw).map_err(|e| anyhow!("{:?}", e))?;
     if result.event != "init" && result.event != "update" {
         return Ok(None);
     }
-    let mut ob = Orderbook::new("coinjar");
+    let key = &result.topic;
+    let mut tmp = COINJAR.lock().unwrap();
+    let ob = if let Some(ob) = tmp.get_mut(key) {
+        ob
+    } else {
+        tmp.insert(key.clone(), Orderbook::new("coinjar"));
+        tmp.get_mut(key).unwrap()
+    };
     let result = result.payload;
     for [price_str, quantity_str] in result.bids {
         let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
@@ -226,7 +236,7 @@ fn coinjar_parser(raw: String) -> Result<Option<Orderbook>> {
         let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
         ob.insert(Side::Ask, price, quantity);
     }
-    Ok(Some(ob))
+    Ok(Some(ob.clone()))
 }
 
 static KRAKEN: Lazy<Mutex<HashMap<String, Orderbook>>> = Lazy::new(|| Mutex::new(HashMap::new()));

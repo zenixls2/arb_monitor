@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:web="http://schemas.live.com/Web/" lang="en">
+<head>
+  <style type="text/css">
+    table {
+	  width: 100%;
+	  table-layout: fixed;
+	}
+	th {
+	  width: 100%;
+	}
+    td {
+	  border-color: black;
+	  border-style: solid;
+	  border-width: 1px;
+	}
+	.explain {
+	  width: 80px;
+	}
+  </style>
+</head>
+<body>
+<script>
+  let e2id = (name) => {
+	switch(name) {
+	  	case "independentreserve": return "i";
+		case "btcmarkets": return "b";
+		case "coinjar": return "c";
+		case "kraken": return "k";
+	}
+  }
+  const socket = new WebSocket("ws://localhost:50051/ws");
+  socket.addEventListener("open", (event) => {
+	console.log("socket open");
+  });
+  socket.addEventListener("message", (event) => {
+	let obj = JSON.parse(event.data);
+	document.getElementById("arb").innerHTML = obj.spread;
+	for (let e in obj.timestamp) {
+		document.getElementById(e2id(e) + "t").innerHTML = obj.timestamp[e];
+	}
+	// cleanup
+	for (let e of ["i", "b", "c", "k"]) {
+	  for (let i=0; i<10; i++) {
+	  	document.getElementById(e + "a" + i).innerHTML = "";
+		document.getElementById(e + "b" + i).innerHTML = "";
+	  }
+	  document.getElementById(e + "l").innerHTML = "";
+	}
+	let countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
+	for (let i=0; i<obj.bids.length; i++) {
+	  let level = obj.bids[i];
+	  let id = e2id(level.exchange);
+	  let counter = countermap[id];
+	  let key = id + 'b' + counter;
+	  countermap[id] += 1;
+	  let attr = "";
+	  if (i == 0) {
+	  	attr = "background-color: green";
+	  }
+	  document.getElementById(key).innerHTML = "<p style='" + attr + "'>" + level.price + " : " + level.amount + "</p>";
+	}
+	countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
+	for (let i=0; i<obj.asks.length; i++) {
+	  let level = obj.asks[i];
+	  let id = e2id(level.exchange);
+	  let counter = countermap[id];
+	  let key = id + 'a' + counter;
+	  countermap[id] += 1;
+	  let attr = ""
+	  if (i == 0) {
+	  	attr = "background-color: green";
+	  }
+	  document.getElementById(key).innerHTML = "<p style='"+attr+"'>" + level.price + " : " + level.amount + "</p>";
+	}
+  });
+  socket.addEventListener("close", (event) => {
+	console.log("socket close");
+  });
+</script>
+<h3 id="arb"></h3>
+<table>
+<thead>
+  <tr>
+	<th class="explain"></th>
+	<th>IndependentReserve</th>
+	<th>BTCMarkets</th>
+	<th>Coinjar</th>
+	<th>Kraken</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+	<td class="explain" rowspan="10">Ask Levels</td>
+	<td id="ia9"></td>
+	<td id="ba9"></td>
+	<td id="ca9"></td>
+	<td id="ka9"></td>
+  </tr>
+  <tr>
+	<td id="ia8"></td>
+	<td id="ba8"></td>
+	<td id="ca8"></td>
+	<td id="ka8"></td>
+  </tr>
+  <tr>
+	<td id="ia7"></td>
+	<td id="ba7"></td>
+	<td id="ca7"></td>
+	<td id="ka7"></td>
+  </tr>
+  <tr>
+	<td id="ia6"></td>
+	<td id="ba6"></td>
+	<td id="ca6"></td>
+	<td id="ka6"></td>
+  </tr>
+  <tr>
+	<td id="ia5"></td>
+	<td id="ba5"></td>
+	<td id="ca5"></td>
+	<td id="ka5"></td>
+  </tr>
+  <tr>
+	<td id="ia4"></td>
+	<td id="ba4"></td>
+	<td id="ca4"></td>
+	<td id="ka4"></td>
+  </tr>
+  <tr>
+	<td id="ia3"></td>
+	<td id="ba3"></td>
+	<td id="ca3"></td>
+	<td id="ka3"></td>
+  </tr>
+  <tr>
+	<td id="ia2"></td>
+	<td id="ba2"></td>
+	<td id="ca2"></td>
+	<td id="ka2"></td>
+  </tr>
+  <tr>
+	<td id="ia1"></td>
+	<td id="ba1"></td>
+	<td id="ca1"></td>
+	<td id="ka1"></td>
+  </tr>
+  <tr>
+	<td id="ia0"></td>
+	<td id="ba0"></td>
+	<td id="ca0"></td>
+	<td id="ka0"></td>
+  </tr>
+  <!-- last price -->
+  <tr>
+	<td class="explain">Last Price</td>
+	<td id="il"></td>
+	<td id="bl"></td>
+	<td id="cl"></td>
+	<td id="kl"></td>
+  </tr>
+  <tr>
+	<td class="explain" rowspan="10">Bid Levels</td>
+	<td id="ib0"></td>
+	<td id="bb0"></td>
+	<td id="cb0"></td>
+	<td id="kb0"></td>
+  </tr>
+  <tr>
+	<td id="ib1"></td>
+	<td id="bb1"></td>
+	<td id="cb1"></td>
+	<td id="kb1"></td>
+  </tr>
+  <tr>
+	<td id="ib2"></td>
+	<td id="bb2"></td>
+	<td id="cb2"></td>
+	<td id="kb2"></td>
+  </tr>
+  <tr>
+	<td id="ib3"></td>
+	<td id="bb3"></td>
+	<td id="cb3"></td>
+	<td id="kb3"></td>
+  </tr>
+  <tr>
+	<td id="ib4"></td>
+	<td id="bb4"></td>
+	<td id="cb4"></td>
+	<td id="kb4"></td>
+  </tr>
+  <tr>
+	<td id="ib5"></td>
+	<td id="bb5"></td>
+	<td id="cb5"></td>
+	<td id="kb5"></td>
+  </tr>
+  <tr>
+	<td id="ib6"></td>
+	<td id="bb6"></td>
+	<td id="cb6"></td>
+	<td id="kb6"></td>
+  </tr>
+  <tr>
+	<td id="ib7"></td>
+	<td id="bb7"></td>
+	<td id="cb7"></td>
+	<td id="kb7"></td>
+  </tr>
+  <tr>
+	<td id="ib8"></td>
+	<td id="bb8"></td>
+	<td id="cb8"></td>
+	<td id="kb8"></td>
+  </tr>
+  <tr>
+	<td id="ib9"></td>
+	<td id="bb9"></td>
+	<td id="cb9"></td>
+	<td id="kb9"></td>
+  </tr>
+  <tr>
+	<td>Timestamp</td>
+	<td id="it"></td>
+	<td id="bt"></td>
+	<td id="ct"></td>
+	<td id="kt"></td>
+  </tr>
+</tbody>
+</table>
+</body>
+</html>

@@ -93,17 +93,28 @@ impl AggregatedOrderbook {
     // merge the content from one orderbook
     pub fn merge(&mut self, orderbook: &Orderbook) {
         let name = &orderbook.name;
+        let mut counter = 0;
         for (price, volume) in orderbook.bid.iter() {
+            counter += 1;
             self.bid
                 .entry(price.clone())
                 .and_modify(|e| e.push((name.clone(), volume.clone())))
                 .or_insert_with(|| vec![(name.clone(), volume.clone())]);
+
+            if counter == 10 {
+                break;
+            }
         }
+        let mut counter = 0;
         for (price, volume) in orderbook.ask.iter() {
+            counter += 1;
             self.ask
                 .entry(price.clone())
                 .and_modify(|e| e.push((name.clone(), volume.clone())))
                 .or_insert_with(|| vec![(name.clone(), volume.clone())]);
+            if counter == 10 {
+                break;
+            }
         }
         self.spread = 0.0;
         self.timestamp.remove(name);
@@ -117,61 +128,43 @@ impl AggregatedOrderbook {
             timestamp: HashMap::new(),
         }
     }
-    // calculate the spread, output the stored price and volume data to grpc's Summary
-    pub fn finalize(&mut self, level: u32) -> Result<Summary> {
+    // calculate the spread, output the stored price and volume data to Summary
+    pub fn finalize(&mut self) -> Result<Summary> {
         let mut cursor = self.bid.upper_bound(Bound::Unbounded);
-        let mut counter = 0;
         let timestamp = self
             .timestamp
             .iter()
             .map(|(e, t)| (e.clone(), t.to_string()))
             .collect();
         let mut bids = vec![];
-        'bid_outer: for _ in 0..level {
-            if let Some((price, v)) = cursor.key_value() {
-                for (exchange, volume) in v.iter() {
-                    counter += 1;
-                    bids.push(Level {
-                        exchange: exchange.clone(),
-                        price: price.to_string(),
-                        amount: volume.to_string(),
-                    });
-                    if counter == 10 {
-                        break 'bid_outer;
-                    }
-                }
-                // notice move_prev is to move to the previous element in tree,
-                // not the order of upper bound or lower bound.
-                if cursor.peek_prev().is_some() {
-                    cursor.move_prev();
-                } else {
-                    break;
-                }
+        while let Some((price, v)) = cursor.key_value() {
+            for (exchange, volume) in v.iter() {
+                bids.push(Level {
+                    exchange: exchange.clone(),
+                    price: price.to_string(),
+                    amount: volume.to_string(),
+                });
+            }
+            // notice move_prev is to move to the previous element in tree,
+            // not the order of upper bound or lower bound.
+            if cursor.peek_prev().is_some() {
+                cursor.move_prev();
             } else {
                 break;
             }
         }
         let mut cursor = self.ask.lower_bound(Bound::Unbounded);
-        let mut counter = 0;
         let mut asks = vec![];
-        'ask_outer: for _ in 0..level {
-            if let Some((price, v)) = cursor.key_value() {
-                for (exchange, volume) in v.iter() {
-                    counter += 1;
-                    asks.push(Level {
-                        exchange: exchange.clone(),
-                        price: price.to_string(),
-                        amount: volume.to_string(),
-                    });
-                    if counter == 10 {
-                        break 'ask_outer;
-                    }
-                }
-                if cursor.peek_next().is_some() {
-                    cursor.move_next();
-                } else {
-                    break;
-                }
+        while let Some((price, v)) = cursor.key_value() {
+            for (exchange, volume) in v.iter() {
+                asks.push(Level {
+                    exchange: exchange.clone(),
+                    price: price.to_string(),
+                    amount: volume.to_string(),
+                });
+            }
+            if cursor.peek_next().is_some() {
+                cursor.move_next();
             } else {
                 break;
             }

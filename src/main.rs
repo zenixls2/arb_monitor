@@ -154,7 +154,7 @@ async fn setup_marketdata(
         for (_key, ob) in exchange_cache.iter() {
             agg.merge(ob);
         }
-        match agg.finalize(10) {
+        match agg.finalize() {
             Ok(result) => {
                 let summary = serde_json::to_string(&result).unwrap();
                 if let Err(e) = tx.send(summary) {
