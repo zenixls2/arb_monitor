@@ -1,8 +1,9 @@
-use anyhow::{anyhow, Result};
-use bigdecimal::{BigDecimal, ToPrimitive};
+use anyhow::Result;
+use bigdecimal::BigDecimal;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Bound;
+use std::time::SystemTime;
 
 #[derive(Clone, Copy)]
 pub enum Side {
@@ -10,18 +11,22 @@ pub enum Side {
     Ask,
 }
 
+fn get_unixtime() -> u128 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Orderbook {
     pub(self) name: String,
+    pub(self) timestamp: u128,
     pub(self) bid: BTreeMap<BigDecimal, BigDecimal>,
     pub(self) ask: BTreeMap<BigDecimal, BigDecimal>,
 }
 
 impl Orderbook {
-    pub fn clear(&mut self) {
-        self.bid.clear();
-        self.ask.clear();
-    }
     pub fn insert(&mut self, side: Side, price: BigDecimal, volume: BigDecimal) {
         match side {
             Side::Bid => {
@@ -33,12 +38,16 @@ impl Orderbook {
                 self.ask.insert(price, volume);
             }
         };
+        // some exchange doesn't provide timestamp in their websocket events.
+        // use local timestamp to have the same basis
+        self.timestamp = get_unixtime();
     }
     pub fn new(name: &str) -> Orderbook {
         Orderbook {
             name: name.to_string(),
             bid: BTreeMap::new(),
             ask: BTreeMap::new(),
+            timestamp: get_unixtime(),
         }
     }
     // used to trim bid/ask to level numbers of price bars
@@ -62,20 +71,22 @@ pub struct AggregatedOrderbook {
     pub spread: f64,
     pub bid: BTreeMap<BigDecimal, Vec<(String, BigDecimal)>>,
     pub ask: BTreeMap<BigDecimal, Vec<(String, BigDecimal)>>,
+    pub timestamp: HashMap<String, u128>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Level {
     exchange: String,
-    price: f64,
-    amount: f64,
+    price: String,
+    amount: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct Summary {
-    pub spread: f64,
+    pub spread: String,
     pub bids: Vec<Level>,
     pub asks: Vec<Level>,
+    pub timestamp: HashMap<String, String>,
 }
 
 impl AggregatedOrderbook {
@@ -95,18 +106,26 @@ impl AggregatedOrderbook {
                 .or_insert_with(|| vec![(name.clone(), volume.clone())]);
         }
         self.spread = 0.0;
+        self.timestamp.remove(name);
+        self.timestamp.insert(name.clone(), orderbook.timestamp);
     }
     pub fn new() -> AggregatedOrderbook {
         AggregatedOrderbook {
             spread: std::f64::NAN,
             bid: BTreeMap::new(),
             ask: BTreeMap::new(),
+            timestamp: HashMap::new(),
         }
     }
     // calculate the spread, output the stored price and volume data to grpc's Summary
     pub fn finalize(&mut self, level: u32) -> Result<Summary> {
         let mut cursor = self.bid.upper_bound(Bound::Unbounded);
         let mut counter = 0;
+        let timestamp = self
+            .timestamp
+            .iter()
+            .map(|(e, t)| (e.clone(), t.to_string()))
+            .collect();
         let mut bids = vec![];
         'bid_outer: for _ in 0..level {
             if let Some((price, v)) = cursor.key_value() {
@@ -114,12 +133,8 @@ impl AggregatedOrderbook {
                     counter += 1;
                     bids.push(Level {
                         exchange: exchange.clone(),
-                        price: price
-                            .to_f64()
-                            .ok_or_else(|| anyhow!("price conversion error: {:?}", price))?,
-                        amount: volume
-                            .to_f64()
-                            .ok_or_else(|| anyhow!("volume conversion error: {:?}", volume))?,
+                        price: price.to_string(),
+                        amount: volume.to_string(),
                     });
                     if counter == 10 {
                         break 'bid_outer;
@@ -145,12 +160,8 @@ impl AggregatedOrderbook {
                     counter += 1;
                     asks.push(Level {
                         exchange: exchange.clone(),
-                        price: price
-                            .to_f64()
-                            .ok_or_else(|| anyhow!("price conversion error: {:?}", price))?,
-                        amount: volume
-                            .to_f64()
-                            .ok_or_else(|| anyhow!("volume conversion error: {:?}", volume))?,
+                        price: price.to_string(),
+                        amount: volume.to_string(),
                     });
                     if counter == 10 {
                         break 'ask_outer;
@@ -165,13 +176,18 @@ impl AggregatedOrderbook {
                 break;
             }
         }
-        let best_bid = bids.first();
-        let best_ask = asks.first();
+        let best_bid = self.bid.last_key_value().map(|(p, _)| p);
+        let best_ask = self.ask.first_key_value().map(|(p, _)| p);
         let spread = match (best_bid, best_ask) {
-            (Some(v), Some(w)) => w.price - v.price,
-            _ => 0.0,
+            (Some(v), Some(w)) => (w - v).to_string(),
+            _ => "0".to_string(),
         };
-        Ok(Summary { spread, bids, asks })
+        Ok(Summary {
+            spread,
+            bids,
+            asks,
+            timestamp,
+        })
     }
 }
 
@@ -229,29 +245,29 @@ mod tests {
         agg.merge(&ob1);
         agg.merge(&ob2);
         let summary = agg.finalize(4).unwrap();
-        assert_eq!(summary.spread, 0.0);
+        assert_eq!(summary.spread, 0_f64.to_string());
         assert_eq!(
             summary.asks,
             vec![
                 Level {
                     exchange: "A".to_string(),
-                    price: 1.,
-                    amount: 10.
+                    price: 1_f64.to_string(),
+                    amount: 10_f64.to_string(),
                 },
                 Level {
                     exchange: "B".to_string(),
-                    price: 1.,
-                    amount: 10.
+                    price: 1_f64.to_string(),
+                    amount: 10_f64.to_string(),
                 },
                 Level {
                     exchange: "A".to_string(),
-                    price: 2.,
-                    amount: 10.
+                    price: 2_f64.to_string(),
+                    amount: 10_f64.to_string()
                 },
                 Level {
                     exchange: "B".to_string(),
-                    price: 3.,
-                    amount: 10.
+                    price: 3_f64.to_string(),
+                    amount: 10_f64.to_string(),
                 },
             ]
         );

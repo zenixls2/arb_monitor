@@ -1,29 +1,26 @@
-#![feature(btree_cursors)]
+#![feature(btree_cursors, io_error_other)]
 
 mod apitree;
 mod config;
 mod exchange;
 mod orderbook;
 use crate::config::Config;
-use actix::{Actor, StreamHandler};
-use actix::{ActorContext, System};
+use actix::{Actor, ActorContext, AsyncContext, StreamHandler};
 use actix_web::{middleware, web, App, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
 use actix_web_codegen::*;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use exchange::Exchange;
-use futures_util::{pin_mut, select, FutureExt, SinkExt, StreamExt};
+use futures_util::StreamExt;
 use log::{error, info};
 use orderbook::{AggregatedOrderbook, Orderbook};
 use std::collections::HashMap;
 use std::string::String;
-use std::sync::Arc;
 use std::vec::Vec;
-use tokio::sync::broadcast::{self, error::RecvError, Sender};
+use tokio::sync::broadcast;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
-use tokio::task::JoinHandle;
-use tokio::task::JoinSet;
+use tokio_stream::wrappers::BroadcastStream;
 
 fn setup_logger(
     log_file: Option<String>,
@@ -41,17 +38,25 @@ fn setup_logger(
     Ok(())
 }
 
-struct Session;
+struct Session {
+    tx: broadcast::Sender<String>,
+}
 
 impl Session {
-    pub fn new(_tx: broadcast::Sender<String>) -> Self {
-        Self {}
+    pub fn new(tx: broadcast::Sender<String>) -> Self {
+        Self { tx }
     }
 }
 
 impl Actor for Session {
     type Context = ws::WebsocketContext<Self>;
-    fn started(&mut self, ctx: &mut Self::Context) {}
+    fn started(&mut self, ctx: &mut Self::Context) {
+        let rx = BroadcastStream::new(self.tx.subscribe()).map(|e| {
+            e.map(|s| ws::Message::Text(s.into()))
+                .map_err(|e| ws::ProtocolError::Io(std::io::Error::other(e)))
+        });
+        ctx.add_stream(rx);
+    }
 }
 
 type WsResult = Result<ws::Message, ws::ProtocolError>;
@@ -109,7 +114,7 @@ async fn executor(
     loop {
         match client.next().await {
             Ok(Some(orderbook)) => {
-                tx.send((exchange.clone(), orderbook));
+                tx.send((exchange.clone(), orderbook))?;
             }
             Ok(None) => {
                 info!("shutdown {}", exchange);
@@ -129,17 +134,18 @@ async fn setup_marketdata(
 ) {
     let (itx, mut irx) = unbounded_channel::<(String, Orderbook)>();
     let mut exchange_cache = HashMap::<String, Orderbook>::with_capacity(exchange_pairs.len());
+    let mut threads = vec![];
     for (exchange, pairs) in exchange_pairs {
         info!("loading {}: {:?}", exchange, pairs);
         let ltx = itx.clone();
-        std::thread::spawn(move || {
+        threads.push(std::thread::spawn(move || {
             let system = actix::System::new();
             let runtime = system.runtime();
             let result = runtime.block_on(executor(exchange.clone(), pairs.clone(), ltx));
             if let Err(e) = result {
                 error!("exchange client spawn error: {}", e);
             }
-        });
+        }));
     }
     while let Some((exchange, orderbook)) = irx.recv().await {
         let mut agg = AggregatedOrderbook::new();
@@ -160,6 +166,7 @@ async fn setup_marketdata(
             }
         }
     }
+    threads.clear();
 }
 
 #[tokio::main]
@@ -176,8 +183,9 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| "0.0.0.0".to_string());
 
     let (tx, mut rx) = unbounded_channel::<String>();
-    let (btx, mut brx) = broadcast::channel::<String>(20);
+    let (btx, mut brx) = broadcast::channel::<String>(100);
     let cbtx = btx.clone();
+    // forward message from unbounded channel to broadcast channel
     tokio::spawn(async move {
         while let Some(item) = rx.recv().await {
             if let Err(e) = cbtx.send(item) {
@@ -185,14 +193,20 @@ async fn main() -> Result<()> {
             }
         }
     });
+
+    // default consumer
     tokio::spawn(async move {
         while let Ok(item) = brx.recv().await {
             info!("Summary {:?}", item);
         }
     });
-    let server_port = config.inner.server_port;
-    let handler1 = tokio::spawn(setup_marketdata(config.inner.exchange_pair_map, tx));
 
+    // subscribe to multiple exchanges
+    // TODO: rewrite using tungstenite
+    let server_port = config.inner.server_port;
+    tokio::spawn(setup_marketdata(config.inner.exchange_pair_map, tx));
+
+    // websocket server for broadcasting states
     HttpServer::new(move || {
         App::new()
             .app_data(btx.clone())

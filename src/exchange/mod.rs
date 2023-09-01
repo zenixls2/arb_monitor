@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use awc::ws::Frame::*;
 use formatx::formatx;
 use futures_util::{SinkExt, StreamExt};
-use log::info;
+use log::{debug, info};
 use std::vec::Vec;
 
 pub struct Exchange {
@@ -71,33 +71,40 @@ impl Exchange {
             .connection
             .as_mut()
             .ok_or_else(|| anyhow!("Not connect yet. Please run connect first"))?;
-        if let Some(result) = result.next().await {
-            let raw = match result? {
-                Text(msg) => std::str::from_utf8(&msg)?.to_string(),
-                Binary(msg) => std::str::from_utf8(&msg)?.to_string(),
-                Continuation(item) => match item {
-                    FirstText(b) | FirstBinary(b) | Continue(b) => {
-                        self.cache += std::str::from_utf8(&b)?;
-                        return Ok(None);
-                    }
-                    Last(b) => {
-                        let output = self.cache.clone() + std::str::from_utf8(&b)?;
-                        self.cache = "".to_string();
-                        output
-                    }
-                },
-                Ping(_) | Pong(_) => return Ok(None),
-                Close(_) => return Err(anyhow!("close")),
-            };
+        loop {
+            if let Some(result) = result.next().await {
+                let raw = match result? {
+                    Text(msg) => std::str::from_utf8(&msg)?.to_string(),
+                    Binary(msg) => std::str::from_utf8(&msg)?.to_string(),
+                    Continuation(item) => match item {
+                        FirstText(b) | FirstBinary(b) | Continue(b) => {
+                            self.cache += std::str::from_utf8(&b)?;
+                            return Ok(None);
+                        }
+                        Last(b) => {
+                            let output = self.cache.clone() + std::str::from_utf8(&b)?;
+                            self.cache = "".to_string();
+                            output
+                        }
+                    },
+                    Ping(_) | Pong(_) => return Ok(None),
+                    Close(_) => return Err(anyhow!("close")),
+                };
 
-            let mut parsed = (apitree::WS_APIMAP
-                .get(&self.name)
-                .ok_or_else(|| anyhow!("Exchange not supported"))?
-                .parse)(raw)?;
-            parsed.trim(self.level);
-            Ok(Some(parsed))
-        } else {
-            Ok(None)
+                debug!("{}: {}", self.name, raw);
+
+                if let Some(mut e) = (apitree::WS_APIMAP
+                    .get(&self.name)
+                    .ok_or_else(|| anyhow!("Exchange not supported"))?
+                    .parse)(raw)?
+                {
+                    e.trim(self.level);
+                    return Ok(Some(e));
+                }
+                // skip none
+            } else {
+                return Ok(None);
+            }
         }
     }
 }
