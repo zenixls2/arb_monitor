@@ -131,6 +131,7 @@ fn indreserve_parser(raw: String) -> Result<Option<Orderbook>> {
     struct WsEvent {
         #[serde(default)]
         channel: String,
+        #[serde(default)]
         data: Value,
         event: String,
     }
@@ -144,7 +145,7 @@ fn indreserve_parser(raw: String) -> Result<Option<Orderbook>> {
         }
         return Ok(None);
     } else if result.event != "OrderBookSnapshot" && result.event != "OrderBookChange" {
-        return Err(anyhow!("non-snapshot signal passed it"));
+        return Ok(None);
     }
     let mut tmp = INDRESERVE.lock().unwrap();
     if let Some(ob) = tmp.get_mut(&result.channel) {
