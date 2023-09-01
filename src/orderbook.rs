@@ -1,5 +1,5 @@
 use anyhow::Result;
-use bigdecimal::BigDecimal;
+use bigdecimal::{BigDecimal, Zero};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Bound;
@@ -31,11 +31,15 @@ impl Orderbook {
         match side {
             Side::Bid => {
                 self.bid.remove(&price);
-                self.bid.insert(price, volume);
+                if !volume.is_zero() {
+                    self.bid.insert(price, volume);
+                }
             }
             Side::Ask => {
                 self.ask.remove(&price);
-                self.ask.insert(price, volume);
+                if !volume.is_zero() {
+                    self.ask.insert(price, volume);
+                }
             }
         };
         // some exchange doesn't provide timestamp in their websocket events.

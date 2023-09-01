@@ -88,7 +88,7 @@ impl Exchange {
                         }
                     },
                     Ping(_) | Pong(_) => return Ok(None),
-                    Close(_) => return Err(anyhow!("close")),
+                    Close(_) => return Err(anyhow!("close {}", self.name)),
                 };
 
                 debug!("{}: {}", self.name, raw);
