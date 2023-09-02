@@ -241,7 +241,7 @@ mod tests {
         let mut agg = AggregatedOrderbook::new();
         agg.merge(&ob1);
         agg.merge(&ob2);
-        let summary = agg.finalize(4).unwrap();
+        let summary = agg.finalize().unwrap();
         assert_eq!(summary.spread, 0_f64.to_string());
         assert_eq!(
             summary.asks,
