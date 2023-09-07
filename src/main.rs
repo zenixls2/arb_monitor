@@ -11,6 +11,7 @@ use actix_web_actors::ws;
 use actix_web_codegen::*;
 use anyhow::{anyhow, Result};
 use clap::Parser;
+use config::ExchangeSetting;
 use exchange::Exchange;
 use futures_util::StreamExt;
 use log::{error, info};
@@ -103,12 +104,12 @@ async fn websocket(
 
 async fn executor(
     exchange: String,
-    pairs: Vec<String>,
+    pairs: Vec<ExchangeSetting>,
     tx: UnboundedSender<(String, Orderbook)>,
 ) -> Result<()> {
     let mut client = Exchange::new(&exchange);
     info!("start executor: {}", exchange);
-    client.connect(pairs).await?;
+    client.connect(pairs.clone()).await?;
     info!("connect {}", exchange);
     // currently we only allow single subscription
     loop {
@@ -121,7 +122,11 @@ async fn executor(
                 break;
             }
             Err(e) => {
-                error!("{}", e);
+                error!("{}, reconnect...", e);
+                client.clear()?;
+                client = Exchange::new(&exchange);
+                client.connect(pairs.clone()).await?;
+                info!("connect {}", exchange);
             }
         }
     }
@@ -129,19 +134,19 @@ async fn executor(
 }
 
 async fn setup_marketdata(
-    exchange_pairs: HashMap<String, Vec<String>>,
+    exchange_pairs: HashMap<String, Vec<ExchangeSetting>>,
     tx: UnboundedSender<String>,
 ) {
     let (itx, mut irx) = unbounded_channel::<(String, Orderbook)>();
     let mut exchange_cache = HashMap::<String, Orderbook>::with_capacity(exchange_pairs.len());
     let mut threads = vec![];
-    for (exchange, pairs) in exchange_pairs {
-        info!("loading {}: {:?}", exchange, pairs);
+    for (exchange, settings) in exchange_pairs {
+        info!("loading {}: {:?}", exchange, settings);
         let ltx = itx.clone();
         threads.push(std::thread::spawn(move || {
             let system = actix::System::new();
             let runtime = system.runtime();
-            let result = runtime.block_on(executor(exchange.clone(), pairs.clone(), ltx));
+            let result = runtime.block_on(executor(exchange.clone(), settings.clone(), ltx));
             if let Err(e) = result {
                 error!("exchange client spawn error: {}", e);
             }

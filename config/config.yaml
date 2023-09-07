@@ -4,17 +4,19 @@ exchange_pair_map:
   #bitstamp:
   #- btcusd
   independentreserve:
-    - Xbt-aud
+    - pair: Xbt-aud
+      ws_api: false
+      wait_secs: 1
   btcmarkets:
-    - BTC-AUD
-  #  #BTC-USDT is closed
+    - pair: BTC-AUD
+    #BTC-USDT is closed
   coinjar:
-    - BTCAUD
-  #kraken:
-  #  - XBT/AUD
+    - pair: BTCAUD
+  kraken:
+    - pair: XBT/AUD
 bind_addr: "127.0.0.1"
 server_addr: "127.0.0.1"
 server_port: 50051
 log_path: "test.log"
 # Debug, Info, Warning, Error
-log_level: "Info"
+log_level: "Warning"

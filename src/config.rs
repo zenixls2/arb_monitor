@@ -24,12 +24,29 @@ impl LogLevel {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_three() -> u64 {
+    3u64
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ExchangeSetting {
+    pub pair: String,
+    #[serde(default = "default_true")]
+    pub ws_api: bool,
+    #[serde(default = "default_three")]
+    pub wait_secs: u64,
+}
+
 // This is the real configuration structure.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct InnerConfig {
     // trading pair: btcusdt
     // exchange: binance, bitstamp, independentreserve
-    pub exchange_pair_map: HashMap<String, Vec<String>>,
+    pub exchange_pair_map: HashMap<String, Vec<ExchangeSetting>>,
     // client only. server address to connect to.
     pub server_addr: Option<String>,
     // server only. address on server to bind.
@@ -90,8 +107,22 @@ mod tests {
             config.inner,
             InnerConfig {
                 exchange_pair_map: HashMap::from([
-                    ("binance".to_string(), vec!["btcusdt".to_string()]),
-                    ("bitstamp".to_string(), vec!["btcusd".to_string()]),
+                    (
+                        "binance".to_string(),
+                        vec![ExchangeSetting {
+                            pair: "btcusdt".to_string(),
+                            ws_api: false,
+                            wait_secs: 3,
+                        }]
+                    ),
+                    (
+                        "bitstamp".to_string(),
+                        vec![ExchangeSetting {
+                            pair: "btcusd".to_string(),
+                            ws_api: true,
+                            wait_secs: 3,
+                        }]
+                    ),
                 ]),
                 server_addr: Some("127.0.0.1".to_string()),
                 bind_addr: None,

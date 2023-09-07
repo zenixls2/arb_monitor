@@ -1,8 +1,9 @@
 exchange_pair_map:
   binance:
-    - btcusdt
+    - pair: btcusdt
+      ws_api: false
   bitstamp:
-    - btcusd
+    - pair: btcusd
 server_addr: "127.0.0.1"
 server_port: 50051
 log_path: "test.log"
