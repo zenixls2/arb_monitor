@@ -15,7 +15,7 @@ type ParseFunc = fn(String) -> Result<Option<Orderbook>>;
 pub struct Api {
     pub endpoint: &'static str,
     // (pair, level)
-    pub subscribe_template: &'static str,
+    pub subscribe_template: &'static [&'static str],
     // raw String as input
     pub parse: ParseFunc,
     // render url with data
@@ -28,8 +28,13 @@ pub struct Api {
 
 impl Api {
     // utility to render the subscription text
-    pub fn subscribe_text(&self, pair: &str, level: u32) -> Result<String> {
-        formatx!(self.subscribe_template, pair, level).map_err(|e| anyhow!("{:?}", e))
+    pub fn subscribe_text(&self, pair: &str, level: u32) -> Result<Vec<String>> {
+        let mut result = vec![];
+        for template in self.subscribe_template.iter() {
+            result
+                .push(formatx!(template.to_string(), pair, level).map_err(|e| anyhow!("{:?}", e))?);
+        }
+        Ok(result)
     }
 }
 
@@ -326,7 +331,7 @@ fn kraken_parser(raw: String) -> Result<Option<Orderbook>> {
 pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
     "binance" => Api {
         endpoint: "wss://stream.binance.com:9443/ws",
-        subscribe_template: r#"{{"id": 1, "method": "SUBSCRIBE", "params": ["{}@depth{}@100ms"]}}"#,
+        subscribe_template: &[r#"{{"id": 1, "method": "SUBSCRIBE", "params": ["{}@depth{}@100ms"]}}"#],
         parse: (binance_parser as ParseFunc),
         render_url: false,
         heartbeat: None,
@@ -334,7 +339,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
     },
     "binance_futures" => Api {
         endpoint: "wss://fstream.binance.com:9443/ws",
-        subscribe_template: r#"{{"id":1, "method":"SUBSCRIBE", "params": ["{}@depth{}@100ms"]}}"#,
+        subscribe_template: &[r#"{{"id":1, "method":"SUBSCRIBE", "params": ["{}@depth{}@100ms"]}}"#],
         parse: (binance_parser as ParseFunc),
         render_url: false,
         heartbeat: None,
@@ -342,7 +347,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
     },
     "bitstamp" => Api {
         endpoint: "wss://ws.bitstamp.net",
-        subscribe_template: r#"{{"event":"bts:subscribe","data":{{"channel":"order_book_{}"}}}}"#,
+        subscribe_template: &[r#"{{"event":"bts:subscribe","data":{{"channel":"order_book_{}"}}}}"#],
         parse: (bitstamp_parser as ParseFunc),
         render_url: false,
         heartbeat: None,
@@ -350,7 +355,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
     },
     "independentreserve" => Api {
         endpoint: "wss://websockets.independentreserve.com/orderbook/20?subscribe={}",
-        subscribe_template: r#"{{"Event": "Subscribe", "Data": ["{}"]}}"#,
+        subscribe_template: &[r#"{{"Event": "Subscribe", "Data": ["{}"]}}"#],
         parse: (indreserve_parser as ParseFunc),
         render_url: true,
         heartbeat: None,
@@ -358,7 +363,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
     },
     "btcmarkets" => Api {
         endpoint: "wss://socket.btcmarkets.net/v2",
-        subscribe_template: r#"{{"marketIds": ["{}"], "channels": ["orderbook"], "messageType": "subscribe"}}"#,
+        subscribe_template: &[r#"{{"marketIds": ["{}"], "channels": ["orderbook"], "messageType": "subscribe"}}"#],
         parse: (btcmarkets_parser as ParseFunc),
         render_url: false,
         heartbeat: None,
@@ -366,7 +371,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
     },
     "coinjar" => Api {
         endpoint: "wss://feed.exchange.coinjar.com/socket/websocket",
-        subscribe_template: r#"{{"topic": "book:{}", "event": "phx_join", "payload": {{}}, "ref": 0}}"#,
+        subscribe_template: &[r#"{{"topic": "book:{}", "event": "phx_join", "payload": {{}}, "ref": 0}}"#],
         parse: (coinjar_parser as ParseFunc),
         render_url: false,
         // this will disconnect the websocket
@@ -376,7 +381,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
     },
     "kraken" => Api {
         endpoint: "wss://ws.kraken.com",
-        subscribe_template: r#"{{"event":"subscribe","pair":["{}"], "subscription": {{"name":"book","depth":25}}}}"#,
+        subscribe_template: &[r#"{{"event":"subscribe","pair":["{}"], "subscription": {{"name":"book","depth":25}}}}"#],
         parse: (kraken_parser as ParseFunc),
         render_url: false,
         heartbeat: None,
@@ -397,7 +402,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             rendered,
-            r#"{"id": 1, "method": "SUBSCRIBE", "params": ["BTCUSDT@depth20@100ms"]}"#
+            vec![r#"{"id": 1, "method": "SUBSCRIBE", "params": ["BTCUSDT@depth20@100ms"]}"#]
         );
     }
     #[test]
@@ -420,6 +425,9 @@ mod tests {
             BigDecimal::from_str("0.01").unwrap(),
             BigDecimal::from_str("0.2").unwrap(),
         );
+        if let Some(o) = out.as_ref() {
+            ob.timestamp = o.timestamp;
+        }
         assert_eq!(out, Some(ob));
     }
     #[test]

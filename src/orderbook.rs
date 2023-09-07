@@ -20,10 +20,10 @@ fn get_unixtime() -> u128 {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Orderbook {
-    pub(self) name: String,
-    pub(self) timestamp: u128,
-    pub(self) bid: BTreeMap<BigDecimal, BigDecimal>,
-    pub(self) ask: BTreeMap<BigDecimal, BigDecimal>,
+    pub(crate) name: String,
+    pub(crate) timestamp: u128,
+    pub(crate) bid: BTreeMap<BigDecimal, BigDecimal>,
+    pub(crate) ask: BTreeMap<BigDecimal, BigDecimal>,
 }
 
 impl Orderbook {

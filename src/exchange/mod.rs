@@ -76,12 +76,14 @@ impl Exchange {
         info!("{:?}", result);
         if !render_url {
             for pair in self.pairs.iter() {
-                let request = api.subscribe_text(pair, 20)?;
-                info!("{:?}", request);
-                conn.send(awc::ws::Message::Text(request.into()))
-                    .await
-                    .map(|e| info!("{:?}", e))
-                    .map_err(|e| anyhow!("{:?}", e))?;
+                let requests = api.subscribe_text(pair, 20)?;
+                info!("{:?}", requests);
+                for request in requests {
+                    conn.send(awc::ws::Message::Text(request.into()))
+                        .await
+                        .map(|e| info!("{:?}", e))
+                        .map_err(|e| anyhow!("{:?}", e))?;
+                }
             }
         }
 
