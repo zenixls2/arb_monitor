@@ -185,30 +185,52 @@ fn indreserve_parser(raw: String) -> Result<Option<Orderbook>> {
     }
 }
 
+static BTCMARKETS: Lazy<Mutex<HashMap<String, Orderbook>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
 fn btcmarkets_parser(raw: String) -> Result<Option<Orderbook>> {
     #[derive(Deserialize, Debug)]
     struct WsEvent {
+        #[serde(default)]
         bids: Vec<[String; 2]>,
+        #[serde(default)]
         asks: Vec<[String; 2]>,
+        #[serde(default, rename = "lastPrice")]
+        last_price: String,
+        #[serde(default, rename = "volume24h")]
+        volume: String,
         #[serde(rename = "messageType")]
         message_type: String,
+        #[serde(rename = "marketId")]
+        market_id: String,
     }
     let result: WsEvent = serde_json::from_str(&raw).map_err(|e| anyhow!("{:?}", e))?;
-    if result.message_type != "orderbook" {
-        return Ok(None);
+    let mut tmp = BTCMARKETS.lock().unwrap();
+    let key = &result.market_id;
+    let ob = if let Some(ob) = tmp.get_mut(key) {
+        ob
+    } else {
+        tmp.insert(key.clone(), Orderbook::new("btcmarkets"));
+        tmp.get_mut(key).unwrap()
+    };
+    if result.message_type == "orderbook" {
+        for [price_str, quantity_str] in result.bids {
+            let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
+            let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+            ob.insert(Side::Bid, price, quantity);
+        }
+        for [price_str, quantity_str] in result.asks {
+            let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
+            let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+            ob.insert(Side::Ask, price, quantity);
+        }
+        return Ok(Some(ob.clone()));
+    } else if result.message_type == "tick" {
+        ob.last_price = BigDecimal::from_str(&result.last_price).map_err(|e| anyhow!("{:?}", e))?;
+        ob.volume = BigDecimal::from_str(&result.volume).map_err(|e| anyhow!("{:?}", e))?;
+        return Ok(Some(ob.clone()));
     }
-    let mut ob = Orderbook::new("btcmarkets");
-    for [price_str, quantity_str] in result.bids {
-        let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
-        let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
-        ob.insert(Side::Bid, price, quantity);
-    }
-    for [price_str, quantity_str] in result.asks {
-        let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
-        let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
-        ob.insert(Side::Ask, price, quantity);
-    }
-    Ok(Some(ob))
+    Ok(None)
 }
 
 static COINJAR: Lazy<Mutex<HashMap<String, Orderbook>>> = Lazy::new(|| Mutex::new(HashMap::new()));
@@ -220,43 +242,67 @@ fn coinjar_clear() {
 
 fn coinjar_parser(raw: String) -> Result<Option<Orderbook>> {
     #[derive(Deserialize, Debug)]
-    struct Payload {
-        #[serde(default)]
-        bids: Vec<[String; 2]>,
-        #[serde(default)]
-        asks: Vec<[String; 2]>,
-    }
-
-    #[derive(Deserialize, Debug)]
     struct WsEvent {
         event: String,
-        payload: Payload,
+        payload: Value,
         topic: String,
     }
     let result: WsEvent = serde_json::from_str(&raw).map_err(|e| anyhow!("{:?}", e))?;
     if result.event != "init" && result.event != "update" {
         return Ok(None);
     }
-    let key = &result.topic;
+
     let mut tmp = COINJAR.lock().unwrap();
-    let ob = if let Some(ob) = tmp.get_mut(key) {
-        ob
-    } else {
-        tmp.insert(key.clone(), Orderbook::new("coinjar"));
-        tmp.get_mut(key).unwrap()
-    };
-    let result = result.payload;
-    for [price_str, quantity_str] in result.bids {
-        let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
-        let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
-        ob.insert(Side::Bid, price, quantity);
+    if result.topic.starts_with("ticker") {
+        let key = result.topic.replace("ticker:", "");
+        let ob = if let Some(ob) = tmp.get_mut(&key) {
+            ob
+        } else {
+            tmp.insert(key.clone(), Orderbook::new("coinjar"));
+            tmp.get_mut(&key).unwrap()
+        };
+        #[derive(Deserialize, Debug)]
+        struct Payload {
+            #[serde(default)]
+            volume: String,
+            #[serde(default)]
+            last: String,
+        }
+        let result: Payload =
+            serde_json::from_value(result.payload.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        ob.volume = BigDecimal::from_str(&result.volume).map_err(|e| anyhow!("{:?}", e))?;
+        ob.last_price = BigDecimal::from_str(&result.last).map_err(|e| anyhow!("{:?}", e))?;
+        return Ok(Some(ob.clone()));
+    } else if result.topic.starts_with("book") {
+        let key = result.topic.replace("book:", "");
+        let ob = if let Some(ob) = tmp.get_mut(&key) {
+            ob
+        } else {
+            tmp.insert(key.clone(), Orderbook::new("coinjar"));
+            tmp.get_mut(&key).unwrap()
+        };
+        #[derive(Deserialize, Debug)]
+        struct Payload {
+            #[serde(default)]
+            bids: Vec<[String; 2]>,
+            #[serde(default)]
+            asks: Vec<[String; 2]>,
+        }
+        let result: Payload =
+            serde_json::from_value(result.payload.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        for [price_str, quantity_str] in result.bids {
+            let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
+            let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+            ob.insert(Side::Bid, price, quantity);
+        }
+        for [price_str, quantity_str] in result.asks {
+            let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
+            let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+            ob.insert(Side::Ask, price, quantity);
+        }
+        return Ok(Some(ob.clone()));
     }
-    for [price_str, quantity_str] in result.asks {
-        let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
-        let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
-        ob.insert(Side::Ask, price, quantity);
-    }
-    Ok(Some(ob.clone()))
+    Ok(None)
 }
 
 static KRAKEN: Lazy<Mutex<HashMap<String, Orderbook>>> = Lazy::new(|| Mutex::new(HashMap::new()));
@@ -270,61 +316,90 @@ fn kraken_parser(raw: String) -> Result<Option<Orderbook>> {
     if raw.as_bytes()[0] as char == '{' {
         return Ok(None);
     }
-    #[derive(Deserialize, Debug)]
-    struct Data {
-        #[serde(default)]
-        r#as: Vec<[String; 3]>,
-        #[serde(default)]
-        bs: Vec<[String; 3]>,
-        #[serde(default)]
-        a: Vec<Vec<String>>,
-        #[serde(default)]
-        b: Vec<Vec<String>>,
-    }
     let result: Vec<Value> = serde_json::from_str(&raw).map_err(|e| anyhow!("{:?}", e))?;
     let channel_name: String =
         serde_json::from_value(result[2].clone()).map_err(|e| anyhow!("{:?}", e))?;
     let pair: String = serde_json::from_value(result[3].clone()).map_err(|e| anyhow!("{:?}", e))?;
-    let key = channel_name + &pair;
-    // channel_id: u64
-    // data: object
-    // - as: Vec<[String; 3]>
-    // - bs: Vec<[String; 3]>
-    // channel_name: String
-    // pair: String
-    let data: Data = serde_json::from_value(result[1].clone()).map_err(|e| anyhow!("{:?}", e))?;
-    let mut tmp = KRAKEN.lock().unwrap();
-    let ob = if let Some(ob) = tmp.get_mut(&key) {
-        ob
-    } else {
-        tmp.insert(key.clone(), Orderbook::new("kraken"));
-        tmp.get_mut(&key).unwrap()
-    };
-    for [price_str, quantity_str, _timestamp] in data.bs {
-        let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
-        let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
-        ob.insert(Side::Bid, price, quantity);
+    let key = &pair;
+    if channel_name.starts_with("book") {
+        #[derive(Deserialize, Debug)]
+        struct Data {
+            #[serde(default)]
+            r#as: Vec<[String; 3]>,
+            #[serde(default)]
+            bs: Vec<[String; 3]>,
+            #[serde(default)]
+            a: Vec<Vec<String>>,
+            #[serde(default)]
+            b: Vec<Vec<String>>,
+        }
+        // channel_id: u64
+        // data: object
+        // - as: Vec<[String; 3]>
+        // - bs: Vec<[String; 3]>
+        // channel_name: String
+        // pair: String
+        let data: Data =
+            serde_json::from_value(result[1].clone()).map_err(|e| anyhow!("{:?}", e))?;
+        let mut tmp = KRAKEN.lock().unwrap();
+        let ob = if let Some(ob) = tmp.get_mut(key) {
+            ob
+        } else {
+            tmp.insert(key.clone(), Orderbook::new("kraken"));
+            tmp.get_mut(key).unwrap()
+        };
+        for [price_str, quantity_str, _timestamp] in data.bs {
+            let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
+            let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+            ob.insert(Side::Bid, price, quantity);
+        }
+        for v in data.b {
+            let price_str: &str = &v[0];
+            let quantity_str: &str = &v[1];
+            let price = BigDecimal::from_str(price_str).map_err(|e| anyhow!("{:?}", e))?;
+            let quantity = BigDecimal::from_str(quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+            ob.insert(Side::Bid, price, quantity);
+        }
+        for [price_str, quantity_str, _timestamp] in data.r#as {
+            let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
+            let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+            ob.insert(Side::Ask, price, quantity);
+        }
+        for v in data.a {
+            let price_str: &str = &v[0];
+            let quantity_str: &str = &v[1];
+            let price = BigDecimal::from_str(price_str).map_err(|e| anyhow!("{:?}", e))?;
+            let quantity = BigDecimal::from_str(quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+            ob.insert(Side::Ask, price, quantity);
+        }
+        return Ok(Some(ob.clone()));
+    } else if channel_name == "ticker".to_string() {
+        // data:
+        // - a: best ask [3]
+        // - b: best bid [3]
+        // - c: close [2]
+        // - v: volume [2] (today, last24hr)
+        #[derive(Deserialize, Debug)]
+        struct Data {
+            #[serde(default)]
+            c: [String; 2],
+            #[serde(default)]
+            v: [String; 2],
+        }
+        let data: Data =
+            serde_json::from_value(result[1].clone()).map_err(|e| anyhow!("{:?}", e))?;
+        let mut tmp = KRAKEN.lock().unwrap();
+        let ob = if let Some(ob) = tmp.get_mut(key) {
+            ob
+        } else {
+            tmp.insert(key.clone(), Orderbook::new("kraken"));
+            tmp.get_mut(key).unwrap()
+        };
+        ob.volume = BigDecimal::from_str(&data.v[1]).map_err(|e| anyhow!("{:?}", e))?;
+        ob.last_price = BigDecimal::from_str(&data.c[0]).map_err(|e| anyhow!("{:?}", e))?;
+        return Ok(Some(ob.clone()));
     }
-    for v in data.b {
-        let price_str: &str = &v[0];
-        let quantity_str: &str = &v[1];
-        let price = BigDecimal::from_str(price_str).map_err(|e| anyhow!("{:?}", e))?;
-        let quantity = BigDecimal::from_str(quantity_str).map_err(|e| anyhow!("{:?}", e))?;
-        ob.insert(Side::Bid, price, quantity);
-    }
-    for [price_str, quantity_str, _timestamp] in data.r#as {
-        let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
-        let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
-        ob.insert(Side::Ask, price, quantity);
-    }
-    for v in data.a {
-        let price_str: &str = &v[0];
-        let quantity_str: &str = &v[1];
-        let price = BigDecimal::from_str(price_str).map_err(|e| anyhow!("{:?}", e))?;
-        let quantity = BigDecimal::from_str(quantity_str).map_err(|e| anyhow!("{:?}", e))?;
-        ob.insert(Side::Ask, price, quantity);
-    }
-    Ok(Some(ob.clone()))
+    Ok(None)
 }
 
 // The API Map compile-time static map that handles depth orderbook subscription and parsing
@@ -363,7 +438,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
     },
     "btcmarkets" => Api {
         endpoint: "wss://socket.btcmarkets.net/v2",
-        subscribe_template: &[r#"{{"marketIds": ["{}"], "channels": ["orderbook"], "messageType": "subscribe"}}"#],
+        subscribe_template: &[r#"{{"marketIds": ["{}"], "channels": ["orderbook", "tick"], "messageType": "subscribe"}}"#],
         parse: (btcmarkets_parser as ParseFunc),
         render_url: false,
         heartbeat: None,
@@ -371,7 +446,10 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
     },
     "coinjar" => Api {
         endpoint: "wss://feed.exchange.coinjar.com/socket/websocket",
-        subscribe_template: &[r#"{{"topic": "book:{}", "event": "phx_join", "payload": {{}}, "ref": 0}}"#],
+        subscribe_template: &[
+            r#"{{"topic": "book:{}", "event": "phx_join", "payload": {{}}, "ref": 0}}"#,
+            r#"{{"topic": "ticker:{}", "event": "phx_join", "payload": {{}}, "ref": 0}}"#,
+        ],
         parse: (coinjar_parser as ParseFunc),
         render_url: false,
         // this will disconnect the websocket
@@ -381,7 +459,9 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
     },
     "kraken" => Api {
         endpoint: "wss://ws.kraken.com",
-        subscribe_template: &[r#"{{"event":"subscribe","pair":["{}"], "subscription": {{"name":"book","depth":25}}}}"#],
+        subscribe_template: &[
+            r#"{{"event":"subscribe","pair":["{}"], "subscription": {{"name":"book","depth":25}}}}"#,
+            r#"{{"event":"subscribe","pair":["{}"], "subscription": {{"name":"ticker"}}}}"#],
         parse: (kraken_parser as ParseFunc),
         render_url: false,
         heartbeat: None,

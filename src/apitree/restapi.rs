@@ -42,6 +42,12 @@ async fn independentreserve_orderbook(pair: String) -> Result<Orderbook> {
         buy_orders: Vec<Level>,
         sell_orders: Vec<Level>,
     }
+    #[derive(Deserialize, Debug)]
+    #[serde(rename_all = "PascalCase")]
+    struct MarketSummary {
+        last_price: f64,
+        day_volume_xbt: f64,
+    }
     let args: Vec<&str> = pair.split('-').collect();
     if args.len() != 2 {
         return Err(anyhow!(
@@ -57,6 +63,14 @@ async fn independentreserve_orderbook(pair: String) -> Result<Orderbook> {
     info!("calling {}...", api);
     let response = reqwest::get(&api).await.map_err(|e| anyhow!("{:?}", e))?;
     let shot: OrderbookSnapshot = response.json().await.map_err(|e| anyhow!("{}", e))?;
+
+    let api = format!(
+        "{}/Public/GetMarketSummary?primaryCurrencyCode={}&secondaryCurrencyCode={}",
+        endpoint, args[0], args[1]
+    );
+    info!("calling {}...", api);
+    let response = reqwest::get(&api).await.map_err(|e| anyhow!("{:?}", e))?;
+    let sum: MarketSummary = response.json().await.map_err(|e| anyhow!("{}", e))?;
     let mut ob = Orderbook::new("independentreserve");
     for level in shot.buy_orders {
         let price = BigDecimal::from_str(&format!("{}", level.price))
@@ -72,5 +86,9 @@ async fn independentreserve_orderbook(pair: String) -> Result<Orderbook> {
             .map_err(|e| anyhow!("parse volume fail: {:?}", e))?;
         ob.insert(Side::Ask, price, v);
     }
+    ob.last_price = BigDecimal::from_str(&format!("{}", sum.last_price))
+        .map_err(|e| anyhow!("parse last_price fail: {:?}", e))?;
+    ob.volume = BigDecimal::from_str(&format!("{}", sum.day_volume_xbt))
+        .map_err(|e| anyhow!("parse volume fail: {:?}", e))?;
     Ok(ob)
 }

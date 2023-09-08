@@ -36,9 +36,6 @@
   socket.addEventListener("message", (event) => {
 	let obj = JSON.parse(event.data);
 	document.getElementById("arb").innerHTML = obj.spread;
-	for (let e in obj.timestamp) {
-		document.getElementById(e2id(e) + "t").innerHTML = obj.timestamp[e];
-	}
 	// cleanup
 	for (let e of ["i", "b", "c", "k"]) {
 	  for (let i=0; i<10; i++) {
@@ -46,6 +43,15 @@
 		document.getElementById(e + "b" + i).innerHTML = "";
 	  }
 	  document.getElementById(e + "l").innerHTML = "";
+	}
+	for (let e in obj.timestamp) {
+		document.getElementById(e2id(e) + "t").innerHTML = obj.timestamp[e];
+	}
+	for (let v in obj.volume) {
+	  document.getElementById(e2id(v) + "v").innerHTML = obj.volume[v];
+	}
+	for (let p in obj.last_price) {
+	  document.getElementById(e2id(p) + "l").innerHTML = obj.last_price[p];
 	}
 	let countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
 	for (let i=0; i<obj.bids.length; i++) {
@@ -226,6 +232,13 @@
 	<td id="bt"></td>
 	<td id="ct"></td>
 	<td id="kt"></td>
+  </tr>
+  <tr>
+	<td>Volume(24h)</td>
+	<td id="iv"></td>
+	<td id="bv"></td>
+	<td id="cv"></td>
+	<td id="kv"></td>
   </tr>
 </tbody>
 </table>

@@ -22,6 +22,8 @@ fn get_unixtime() -> u128 {
 pub struct Orderbook {
     pub(crate) name: String,
     pub(crate) timestamp: u128,
+    pub(crate) volume: BigDecimal,
+    pub(crate) last_price: BigDecimal,
     pub(crate) bid: BTreeMap<BigDecimal, BigDecimal>,
     pub(crate) ask: BTreeMap<BigDecimal, BigDecimal>,
 }
@@ -52,6 +54,8 @@ impl Orderbook {
             bid: BTreeMap::new(),
             ask: BTreeMap::new(),
             timestamp: get_unixtime(),
+            last_price: BigDecimal::zero(),
+            volume: BigDecimal::zero(),
         }
     }
     // used to trim bid/ask to level numbers of price bars
@@ -76,6 +80,8 @@ pub struct AggregatedOrderbook {
     pub bid: BTreeMap<BigDecimal, Vec<(String, BigDecimal)>>,
     pub ask: BTreeMap<BigDecimal, Vec<(String, BigDecimal)>>,
     pub timestamp: HashMap<String, u128>,
+    pub volume: HashMap<String, BigDecimal>,
+    pub last_price: HashMap<String, BigDecimal>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -91,6 +97,8 @@ pub struct Summary {
     pub bids: Vec<Level>,
     pub asks: Vec<Level>,
     pub timestamp: HashMap<String, String>,
+    pub volume: HashMap<String, String>,
+    pub last_price: HashMap<String, String>,
 }
 
 impl AggregatedOrderbook {
@@ -123,6 +131,11 @@ impl AggregatedOrderbook {
         self.spread = 0.0;
         self.timestamp.remove(name);
         self.timestamp.insert(name.clone(), orderbook.timestamp);
+        self.volume.remove(name);
+        self.volume.insert(name.clone(), orderbook.volume.clone());
+        self.last_price.remove(name);
+        self.last_price
+            .insert(name.clone(), orderbook.last_price.clone());
     }
     pub fn new() -> AggregatedOrderbook {
         AggregatedOrderbook {
@@ -130,11 +143,23 @@ impl AggregatedOrderbook {
             bid: BTreeMap::new(),
             ask: BTreeMap::new(),
             timestamp: HashMap::new(),
+            last_price: HashMap::new(),
+            volume: HashMap::new(),
         }
     }
     // calculate the spread, output the stored price and volume data to Summary
     pub fn finalize(&mut self) -> Result<Summary> {
         let mut cursor = self.bid.upper_bound(Bound::Unbounded);
+        let last_price = self
+            .last_price
+            .iter()
+            .map(|(e, t)| (e.clone(), t.to_string()))
+            .collect();
+        let volume = self
+            .volume
+            .iter()
+            .map(|(e, t)| (e.clone(), t.to_string()))
+            .collect();
         let timestamp = self
             .timestamp
             .iter()
@@ -184,6 +209,8 @@ impl AggregatedOrderbook {
             bids,
             asks,
             timestamp,
+            last_price,
+            volume,
         })
     }
 }
