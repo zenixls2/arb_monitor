@@ -38,31 +38,31 @@ The example configuration stores in `config/config.yaml` in yaml format.
 >>     # this sets the interval for polling orderbooks using restful api
 >> ```
 
-- `server\_addr`:
+- `server_addr`:
   (optional) string.
   default value: 127.0.0.1
   currently not used. This is prepared for bot clients to connect.
 
-- `bind\_addr`:
+- `bind_addr`:
   (optional) string
   default value: 0.0.0.0
   the websocket server binding address
 
-- `server\_port`:
+- `server_port`:
   u16, default binds to 50051 port
   This is the port that the client should connect to
 
-- `log\_path`:
+- `log_path`:
   (optional) string
   default: ./test.log
   The path where the log is stored.
   The log doesn't rotate. Please use logrotate to control the behavior.
 
-- `log\_level`:
+- `log_level`:
   (optional) enum strings
   Options: "Error", "Warning", "Info", "Debug"
   Default: "Info"
-  controls the log level of the service written to `log\_path`
+  controls the log level of the service written to `log_path`
 
 ### Preparation
 
