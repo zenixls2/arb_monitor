@@ -13,78 +13,21 @@
 	  border-color: black;
 	  border-style: solid;
 	  border-width: 1px;
+	  text-align: center;
 	}
 	.explain {
 	  width: 80px;
 	}
+	.celldiv {
+	  width:100%;
+	  height:100%;
+	  display:block;
+	}
   </style>
 </head>
 <body>
-<script>
-  let e2id = (name) => {
-	switch(name) {
-	  	case "independentreserve": return "i";
-		case "btcmarkets": return "b";
-		case "coinjar": return "c";
-		case "kraken": return "k";
-	}
-  }
-  const socket = new WebSocket("ws://localhost:50051/ws");
-  socket.addEventListener("open", (event) => {
-	console.log("socket open");
-  });
-  socket.addEventListener("message", (event) => {
-	let obj = JSON.parse(event.data);
-	document.getElementById("arb").innerHTML = obj.spread;
-	// cleanup
-	for (let e of ["i", "b", "c", "k"]) {
-	  for (let i=0; i<10; i++) {
-	  	document.getElementById(e + "a" + i).innerHTML = "";
-		document.getElementById(e + "b" + i).innerHTML = "";
-	  }
-	  document.getElementById(e + "l").innerHTML = "";
-	}
-	for (let e in obj.timestamp) {
-		document.getElementById(e2id(e) + "t").innerHTML = obj.timestamp[e];
-	}
-	for (let v in obj.volume) {
-	  document.getElementById(e2id(v) + "v").innerHTML = obj.volume[v];
-	}
-	for (let p in obj.last_price) {
-	  document.getElementById(e2id(p) + "l").innerHTML = obj.last_price[p];
-	}
-	let countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
-	for (let i=0; i<obj.bids.length; i++) {
-	  let level = obj.bids[i];
-	  let id = e2id(level.exchange);
-	  let counter = countermap[id];
-	  let key = id + 'b' + counter;
-	  countermap[id] += 1;
-	  let attr = "";
-	  if (i == 0) {
-	  	attr = "background-color: green";
-	  }
-	  document.getElementById(key).innerHTML = "<p style='" + attr + "'>" + level.price + " : " + level.amount + "</p>";
-	}
-	countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
-	for (let i=0; i<obj.asks.length; i++) {
-	  let level = obj.asks[i];
-	  let id = e2id(level.exchange);
-	  let counter = countermap[id];
-	  let key = id + 'a' + counter;
-	  countermap[id] += 1;
-	  let attr = ""
-	  if (i == 0) {
-	  	attr = "background-color: green";
-	  }
-	  document.getElementById(key).innerHTML = "<p style='"+attr+"'>" + level.price + " : " + level.amount + "</p>";
-	}
-  });
-  socket.addEventListener("close", (event) => {
-	console.log("socket close");
-  });
-</script>
 <h3 id="arb"></h3>
+Volume Threshold: <input id="vt" placeholder="Volume Threshold" name="vt" />
 <table>
 <thead>
   <tr>
@@ -242,5 +185,110 @@
   </tr>
 </tbody>
 </table>
+<script>
+  var vt = 0.0;
+  var arb = 0.0;
+  var bestbid = 1.0, bestask = 1.0;
+  const vtInput = document.getElementById("vt");
+  vtInput.addEventListener("input", (e) => {
+	try {
+	  if (e.target && e.target.value) {
+	  	vt = parseFloat(e.target.value);
+	  } else {
+		vt = 0.0;
+	  }
+	} catch(e) {
+	  console.log("error: " + e);
+	  vt = 0.0;
+	}
+  });
+  let e2id = (name) => {
+	switch(name) {
+	  	case "independentreserve": return "i";
+		case "btcmarkets": return "b";
+		case "coinjar": return "c";
+		case "kraken": return "k";
+	}
+  }
+  const socket = new WebSocket("ws://localhost:50051/ws");
+  socket.addEventListener("open", (event) => {
+	console.log("socket open");
+  });
+  socket.addEventListener("message", (event) => {
+	let obj = JSON.parse(event.data);
+	// cleanup
+	for (let e of ["i", "b", "c", "k"]) {
+	  for (let i=0; i<10; i++) {
+	  	document.getElementById(e + "a" + i).innerHTML = "";
+		document.getElementById(e + "b" + i).innerHTML = "";
+	  }
+	  document.getElementById(e + "l").innerHTML = "";
+	}
+	for (let e in obj.timestamp) {
+		document.getElementById(e2id(e) + "t").innerHTML = obj.timestamp[e];
+	}
+	for (let v in obj.volume) {
+	  document.getElementById(e2id(v) + "v").innerHTML = obj.volume[v];
+	}
+	for (let p in obj.last_price) {
+	  document.getElementById(e2id(p) + "l").innerHTML = obj.last_price[p];
+	}
+	let countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
+	let index = 0;
+	for (let i=0; i<obj.bids.length; i++) {
+	  let level = obj.bids[i];
+	  let id = e2id(level.exchange);
+	  let counter = countermap[id];
+	  let key = id + 'b' + counter;
+	  countermap[id] += 1;
+	  let attr = "";
+	  if (i == index) {
+		try {
+		  let amount = parseFloat(level.amount);
+		  if (amount < vt) {
+			index += 1;
+		  } else {
+			attr = "background-color: green";
+			bestbid = parseFloat(level.price);
+			arb = ((bestbid / bestask) - 1.) * 100;
+			document.getElementById("arb").innerHTML = arb;
+		  }
+		} catch (e) {
+		  console.error(e);
+		}
+	  }
+	  document.getElementById(key).innerHTML = "<div class='celldiv' style='" + attr + ";'>" + level.price + " : " + level.amount + "</div>";
+	}
+	countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
+	index = 0;
+	for (let i=0; i<obj.asks.length; i++) {
+	  let level = obj.asks[i];
+	  let id = e2id(level.exchange);
+	  let counter = countermap[id];
+	  let key = id + 'a' + counter;
+	  countermap[id] += 1;
+	  let attr = ""
+	  if (i == index) {
+		try {
+		  let amount = parseFloat(level.amount);
+		  if (amount >= vt) {
+			attr = "background-color: green";
+			bestask = parseFloat(level.price);
+			arb = ((bestbid / bestask) - 1.) * 100.;
+			document.getElementById("arb").innerHTML = arb;
+		  } else {
+			index += 1
+		  }
+		} catch(e) {
+		  console.error(e);
+		}
+	  }
+	  document.getElementById(key).innerHTML = "<div class='celldiv' style='"+attr+";'>" + level.price + " : " + level.amount + "</span>";
+	}
+  });
+  socket.addEventListener("close", (event) => {
+	console.log("socket close");
+  });
+</script>
 </body>
 </html>
