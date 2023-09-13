@@ -40,4 +40,11 @@ jobs:
       
       - name: test
         id: test
-        run: cargo test --release  
+        run: cargo test --release
+
+      - name: upload
+        if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) }}
+        uses: actions/upload-artifact@v3
+        with:
+          path: |
+            target/release/arb_monitor

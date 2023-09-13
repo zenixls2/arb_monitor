@@ -124,10 +124,9 @@ impl Exchange {
             if let Some(now) = self.heartbeat_ts {
                 if wait_secs < now.elapsed().as_secs() {
                     info!("send heartbeat to {}", self.name);
-                    let t = msg.clone();
                     self.heartbeat_ts = Some(Instant::now());
                     result
-                        .send(awc::ws::Message::Binary(t.into()))
+                        .send(awc::ws::Message::Binary(msg.into()))
                         .await
                         .map(|e| info!("{:?}", e))
                         .map_err(|e| anyhow!("{:?}", e))?;
