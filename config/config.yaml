@@ -1,8 +1,8 @@
 exchange_pair_map:
   #binance:
-  #- btcusdt
+  #- pair: btcusdt
   #bitstamp:
-  #- btcusd
+  #- pair: btcusd
   independentreserve:
     - pair: Xbt-aud
       ws_api: false
@@ -19,4 +19,4 @@ server_addr: "127.0.0.1"
 server_port: 50051
 log_path: "test.log"
 # Debug, Info, Warning, Error
-log_level: "Warning"
+log_level: "Error"

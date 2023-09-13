@@ -171,6 +171,57 @@ Even though in the config you could set multiple different pairs, the output is 
 
 We recommend users to set the same pair for all exchanges, and launch multiple services binding to different pairs on different ports. To switch pairs in the frontend side, simply connects to different ports. However, the frontend side needs some modification to support such feature.
 
+Also if you have ufw or any other firewall services opened, don't forget to turn on the port.
+For the example of ufw, should be:
+
+```bash
+# suppose the port used in config.yaml is 50051
+sudo ufw allow 50051
+# suppose we host the static html in nginx
+sudo ufw allow "Nginx Full"
+# well, this is optional
+sudo ufw allow OpenSSH
+```
+
+#### Host using systemd
+
+We could also use systemd to host the arb_monitor service. Just put the following service file to `/lib/systemd/system/btcaud.service`.
+
+```ini
+[Unit]
+Description=BTC/AUD monitor
+After=network.target nginx.service
+
+[Service]
+User=root
+WorkingDirectory=/root
+ExecStart=/root/arb_monitor -c ./btcaud.yaml
+Restart=always
+Type=simple
+StandardOutput=syslog
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
+Alias=btcaud.service
+```
+
+We suppose our binary and config exist in the /root folder.
+
+Then
+
+```bash
+systemctl daemon-reload
+systemctl stop btcaud.service
+systemctl start btcaud.service
+```
+
+To check the log:
+
+```bash
+journalctl -u btcaud.service
+```
+
 ### Development
 
 TBD
