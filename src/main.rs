@@ -123,10 +123,15 @@ async fn executor(
             }
             Err(e) => {
                 error!("{}, reconnect...", e);
-                client.clear()?;
+                if let Err(e) = client.clear() {
+                    error!("{}, clear error", e);
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
                 client = Exchange::new(&exchange);
-                client.connect(pairs.clone()).await?;
-                info!("connect {}", exchange);
+                if let Err(e) = client.connect(pairs.clone()).await {
+                    error!("{}, connect error {}", e, exchange);
+                }
+                error!("connect {}", exchange);
             }
         }
     }
