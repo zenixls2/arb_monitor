@@ -188,6 +188,11 @@ fn indreserve_parser(raw: String) -> Result<Option<Orderbook>> {
 static BTCMARKETS: Lazy<Mutex<HashMap<String, Orderbook>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
+fn btcmarkets_clear() {
+    let mut tmp = BTCMARKETS.lock().unwrap();
+    tmp.clear();
+}
+
 fn btcmarkets_parser(raw: String) -> Result<Option<Orderbook>> {
     #[derive(Deserialize, Debug)]
     struct WsEvent {
@@ -442,7 +447,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
         parse: (btcmarkets_parser as ParseFunc),
         render_url: false,
         heartbeat: None,
-        clear: || {},
+        clear: btcmarkets_clear,
     },
     "coinjar" => Api {
         endpoint: "wss://feed.exchange.coinjar.com/socket/websocket",
