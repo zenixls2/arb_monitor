@@ -25,14 +25,20 @@
 	  display:block;
 	}
   </style>
+  <script>
+	function reload(p) {
+	  window.location.href=`${window.location.protocol}//${window.location.domain || "localhost"}:${window.location.port || 80}/#${p}`;
+	  window.location.reload();
+	}
+  </script>
 </head>
 <body>
 <h3>Spread: <div style="display:inline" id="arb"></div></h3>
 <div class="btn-toolbar mb-3" role="toolbar">
   <div class="btn-group me-2" role="group">
-	<button id="btcaud" class="btn btn-outline-secondary" onclick="location.href='http://localhost:8000/#btcaud';location.reload();" type="button">BTC/AUD</button>
-	<button id="usdtaud" class="btn btn-outline-secondary" onclick="location.href='http://localhost:8000/#usdtaud';location.reload()" type="button">USDT/AUD</button>
-	<button id="usdcaud" class="btn btn-outline-secondary" onclick="location.href='http://localhost:8000/#usdcaud';location.reload()" type="button">USDC/AUD</button>
+	<button id="btcaud" class="btn btn-outline-secondary" onclick="reload('btcaud')" type="button">BTC/AUD</button>
+	<button id="usdtaud" class="btn btn-outline-secondary" onclick="reload('usdtaud')" type="button">USDT/AUD</button>
+	<button id="usdcaud" class="btn btn-outline-secondary" onclick="reload('usdcaud')" type="button">USDC/AUD</button>
   </div>
   <div class="input-group">
 	<div class="input-group-text" id="vt_text">Volume Threshold: </div>
