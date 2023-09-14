@@ -163,6 +163,10 @@ fn indreserve_parser(raw: String) -> Result<Option<Orderbook>> {
     }
     let mut tmp = INDRESERVE.lock().unwrap();
     if let Some(ob) = tmp.get_mut(&result.channel) {
+        if result.event == "OrderBookSnapshot" {
+            ob.ask.clear();
+            ob.bid.clear();
+        }
         let result: Snapshot =
             serde_json::from_value(result.data).map_err(|e| anyhow!("{:?}", e))?;
         for Unit { price, volume } in result.bids {
@@ -219,6 +223,8 @@ fn btcmarkets_parser(raw: String) -> Result<Option<Orderbook>> {
         tmp.get_mut(key).unwrap()
     };
     if result.message_type == "orderbook" {
+        ob.ask.clear();
+        ob.bid.clear();
         for [price_str, quantity_str] in result.bids {
             let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
             let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
@@ -286,6 +292,8 @@ fn coinjar_parser(raw: String) -> Result<Option<Orderbook>> {
             tmp.insert(key.clone(), Orderbook::new("coinjar"));
             tmp.get_mut(&key).unwrap()
         };
+        ob.ask.clear();
+        ob.bid.clear();
         #[derive(Deserialize, Debug)]
         struct Payload {
             #[serde(default)]
@@ -353,6 +361,10 @@ fn kraken_parser(raw: String) -> Result<Option<Orderbook>> {
             tmp.insert(key.clone(), Orderbook::new("kraken"));
             tmp.get_mut(key).unwrap()
         };
+        if data.bs.len() > 0 || data.r#as.len() > 0 {
+            ob.bid.clear();
+            ob.ask.clear();
+        }
         for [price_str, quantity_str, _timestamp] in data.bs {
             let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
             let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
