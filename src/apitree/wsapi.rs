@@ -292,8 +292,10 @@ fn coinjar_parser(raw: String) -> Result<Option<Orderbook>> {
             tmp.insert(key.clone(), Orderbook::new("coinjar"));
             tmp.get_mut(&key).unwrap()
         };
-        ob.ask.clear();
-        ob.bid.clear();
+        if result.event == "init" {
+            ob.ask.clear();
+            ob.bid.clear();
+        }
         #[derive(Deserialize, Debug)]
         struct Payload {
             #[serde(default)]
