@@ -27,7 +27,7 @@
   </style>
   <script>
 	function reload(p) {
-	  window.location.href=`${window.location.protocol}//${window.location.domain || "localhost"}:${window.location.port || 80}/#${p}`;
+	  window.location.href=`${window.location.protocol}//${window.location.host}/#${p}`;
 	  window.location.reload();
 	}
   </script>
