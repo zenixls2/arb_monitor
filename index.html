@@ -31,28 +31,33 @@
 </head>
 <body>
 <h3>Spread: <div style="display:inline" id="arb"></div></h3>
+
+<div class="row">
 <div class="btn-toolbar mb-3" role="toolbar">
   <div class="btn-group me-2" role="group">
 	<button id="btcaud" class="btn btn-outline-secondary" onclick="reload('btcaud')" type="button">BTC/AUD</button>
 	<button id="usdtaud" class="btn btn-outline-secondary" onclick="reload('usdtaud')" type="button">USDT/AUD</button>
 	<button id="usdcaud" class="btn btn-outline-secondary" onclick="reload('usdcaud')" type="button">USDC/AUD</button>
   </div>
-  <div class="input-group">
+  <div class="input-group col">
 	<div class="input-group-text" id="vt_text">Volume Threshold: </div>
 	<input id="vt" placeholder="Volume Threshold" class="form-control" type="text" name="vt" />
   </div>
-  <div class="input-group">
+  <div class="input-group col">
 	<div class="input-group-text" id="sd_text">Alert Interval(ms):</div>
 	<input id="sd" class="form-control" placeholder="1000" type="number" value="1000" name="sd" />
   </div>
-  <br>
-  <div class="input-group">
+</div>
+</div>
+<div class="row">
+  <div class="input-group col">
 	<div class="input-group-text">Spread(%) level1 Alert:</div>
 	<input id="lvl1" class="form-control" placeholder="0.0" type="number" name="lvl1" value="0.0"/>
   </div>
-  <div class="input-group">
+  <div class="input-group col">
 	<div class="input-group-text">Spread(%) level2 Alert:</div>
 	<input id="lvl2" class="form-control" placeholder="0.0" type="number" name="lvl2" value="0.0"/>
+  </div>
   </div>
 </div>
 <table>
