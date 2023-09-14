@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:web="http://schemas.live.com/Web/" lang="en">
 <head>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-4bw+/aepP/YC94hEpVNVgiZdgIC5+VKNBQNGCHeKRQN+PtmoHDEXuppvnDJzQIu9" crossorigin="anonymous">
   <style type="text/css">
     table {
 	  width: 100%;
@@ -26,8 +27,18 @@
   </style>
 </head>
 <body>
-<h3 id="arb"></h3>
-Volume Threshold: <input id="vt" placeholder="Volume Threshold" name="vt" />
+<h3>Spread: <div style="display:inline" id="arb"></div></h3>
+<div class="btn-toolbar mb-3" role="toolbar">
+  <div class="btn-group me-2" role="group">
+	<button id="btcaud" class="btn btn-outline-secondary" onclick="location.href='http://localhost:8000/#btcaud';location.reload();" type="button">BTC/AUD</button>
+	<button id="usdtaud" class="btn btn-outline-secondary" onclick="location.href='http://localhost:8000/#usdtaud';location.reload()" type="button">USDT/AUD</button>
+	<button id="usdcaud" class="btn btn-outline-secondary" onclick="location.href='http://localhost:8000/#usdcaud';location.reload()" type="button">USDC/AUD</button>
+  </div>
+  <div class="input-group">
+	<div class="input-group-text" id="vt_text">Volume Threshold: </div>
+	<input id="vt" placeholder="Volume Threshold" class="form-control" type="text" name="vt" />
+  </div>
+</div>
 <table>
 <thead>
   <tr>
@@ -189,6 +200,8 @@ Volume Threshold: <input id="vt" placeholder="Volume Threshold" name="vt" />
   var vt = 0.0;
   var arb = 0.0;
   var bestbid = 1.0, bestask = 1.0;
+
+  // volume threashold processing
   const vtInput = document.getElementById("vt");
   vtInput.addEventListener("input", (e) => {
 	try {
@@ -202,6 +215,8 @@ Volume Threshold: <input id="vt" placeholder="Volume Threshold" name="vt" />
 	  vt = 0.0;
 	}
   });
+
+  // utility to convert exchange name to id
   let e2id = (name) => {
 	switch(name) {
 	  	case "independentreserve": return "i";
@@ -210,85 +225,126 @@ Volume Threshold: <input id="vt" placeholder="Volume Threshold" name="vt" />
 		case "kraken": return "k";
 	}
   }
-  const socket = new WebSocket("ws://localhost:50051/ws");
-  socket.addEventListener("open", (event) => {
-	console.log("socket open");
-  });
-  socket.addEventListener("message", (event) => {
-	let obj = JSON.parse(event.data);
-	// cleanup
-	for (let e of ["i", "b", "c", "k"]) {
-	  for (let i=0; i<10; i++) {
-	  	document.getElementById(e + "a" + i).innerHTML = "";
-		document.getElementById(e + "b" + i).innerHTML = "";
-	  }
-	  document.getElementById(e + "l").innerHTML = "";
+
+  // set pair from url hash
+  // if no hash, fallback to use btcaud
+  var pair = (window.location.hash || "#btcaud").slice(1);
+  // render the port from url hash
+  let getPort = () => {
+	if (pair === "btcaud") {
+	  return 50051;
+	} else if (pair === "usdtaud") {
+	  return 50052;
+	} else if (pair === "usdcaud") {
+	  return 50053;
+	} else {
+	  throw new Error(`unsupport pair: ${pair}`);
 	}
-	for (let e in obj.timestamp) {
-		document.getElementById(e2id(e) + "t").innerHTML = obj.timestamp[e];
-	}
-	for (let v in obj.volume) {
-	  document.getElementById(e2id(v) + "v").innerHTML = obj.volume[v];
-	}
-	for (let p in obj.last_price) {
-	  document.getElementById(e2id(p) + "l").innerHTML = obj.last_price[p];
-	}
-	let countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
-	let index = 0;
-	for (let i=0; i<obj.bids.length; i++) {
-	  let level = obj.bids[i];
-	  let id = e2id(level.exchange);
-	  let counter = countermap[id];
-	  let key = id + 'b' + counter;
-	  countermap[id] += 1;
-	  let attr = "";
-	  if (i == index) {
-		try {
-		  let amount = parseFloat(level.amount);
-		  if (amount < vt) {
-			index += 1;
-		  } else {
-			attr = "background-color: green";
-			bestbid = parseFloat(level.price);
-			arb = ((bestbid / bestask) - 1.) * 100;
-			document.getElementById("arb").innerHTML = arb;
-		  }
-		} catch (e) {
-		  console.error(e);
+  };
+
+  // toggle the btn-primary if the button has been selected
+  let button = document.getElementById(pair);
+  button.classList.toggle("btn-outline-secondary");
+  button.classList.add("btn-primary");
+
+  // determine domain.
+  let domain = "170.64.200.82";
+  if (window.location.hostname !== "localhost" &&
+	window.location.hostname != "127.0.0.1") {
+	domain = window.location.hostname;
+  }
+
+  let connect = () => {
+	// create ws socket base on the rendered domain and port.
+	let url = `ws://${domain}:${getPort()}/ws`;
+	console.log(`connecting to ${url}...`);
+	let socket = new WebSocket(url);
+	socket.addEventListener("open", (event) => {
+	  console.log("socket open");
+	});
+
+	// the message update will overwrite all data
+	socket.addEventListener("message", (event) => {
+	  let obj = JSON.parse(event.data);
+	  // cleanup
+	  for (let e of ["i", "b", "c", "k"]) {
+		for (let i=0; i<10; i++) {
+		  document.getElementById(e + "a" + i).innerHTML = "";
+		  document.getElementById(e + "b" + i).innerHTML = "";
 		}
+		document.getElementById(e + "l").innerHTML = "";
 	  }
-	  document.getElementById(key).innerHTML = "<div class='celldiv' style='" + attr + ";'>" + level.price + " : " + level.amount + "</div>";
-	}
-	countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
-	index = 0;
-	for (let i=0; i<obj.asks.length; i++) {
-	  let level = obj.asks[i];
-	  let id = e2id(level.exchange);
-	  let counter = countermap[id];
-	  let key = id + 'a' + counter;
-	  countermap[id] += 1;
-	  let attr = ""
-	  if (i == index) {
-		try {
-		  let amount = parseFloat(level.amount);
-		  if (amount >= vt) {
-			attr = "background-color: green";
-			bestask = parseFloat(level.price);
-			arb = ((bestbid / bestask) - 1.) * 100.;
-			document.getElementById("arb").innerHTML = arb;
-		  } else {
-			index += 1
+	  for (let e in obj.timestamp) {
+		  document.getElementById(e2id(e) + "t").innerHTML = obj.timestamp[e];
+	  }
+	  for (let v in obj.volume) {
+		document.getElementById(e2id(v) + "v").innerHTML = obj.volume[v];
+	  }
+	  for (let p in obj.last_price) {
+		document.getElementById(e2id(p) + "l").innerHTML = obj.last_price[p];
+	  }
+	  let countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
+	  let index = 0;
+	  for (let i=0; i<obj.bids.length; i++) {
+		// dynamically create ids in the html components
+		let level = obj.bids[i];
+		let id = e2id(level.exchange);
+		let counter = countermap[id];
+		let key = id + 'b' + counter;
+		countermap[id] += 1;
+		let attr = "";
+		if (i == index) {
+		  try {
+			let amount = parseFloat(level.amount);
+			if (amount < vt) {
+			  index += 1;
+			} else {
+			  attr = "background-color: green";
+			  bestbid = parseFloat(level.price);
+			  arb = ((bestbid / bestask) - 1.) * 100;
+			  document.getElementById("arb").innerHTML = arb;
+			}
+		  } catch (e) {
+			console.error(e);
 		  }
-		} catch(e) {
-		  console.error(e);
 		}
+		document.getElementById(key).innerHTML = "<div class='celldiv' style='" + attr + ";'>" + level.price + " : " + level.amount + "</div>";
 	  }
-	  document.getElementById(key).innerHTML = "<div class='celldiv' style='"+attr+";'>" + level.price + " : " + level.amount + "</span>";
-	}
-  });
-  socket.addEventListener("close", (event) => {
-	console.log("socket close");
-  });
+	  countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
+	  index = 0;
+	  for (let i=0; i<obj.asks.length; i++) {
+		let level = obj.asks[i];
+		let id = e2id(level.exchange);
+		let counter = countermap[id];
+		let key = id + 'a' + counter;
+		countermap[id] += 1;
+		let attr = ""
+		if (i == index) {
+		  try {
+			let amount = parseFloat(level.amount);
+			if (amount >= vt) {
+			  attr = "background-color: green";
+			  bestask = parseFloat(level.price);
+			  arb = ((bestbid / bestask) - 1.) * 100.;
+			  document.getElementById("arb").innerHTML = arb;
+			} else {
+			  index += 1
+			}
+		  } catch(e) {
+			console.error(e);
+		  }
+		}
+		document.getElementById(key).innerHTML = "<div class='celldiv' style='"+attr+";'>" + level.price + " : " + level.amount + "</span>";
+	  }
+	});
+	socket.addEventListener("close", (event) => {
+	  console.log("socket close");
+	  setTimeout(() => {
+		connect();
+	  }, 1000);
+	});
+  };
+  connect();
 </script>
 </body>
 </html>
