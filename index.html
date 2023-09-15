@@ -36,6 +36,11 @@
 	  window.location.href=`${window.location.protocol}//${window.location.host}/#${p}`;
 	  window.location.reload();
 	}
+	var state;
+	function toggle(name, e) {
+	  state[name] = e.checked;
+	  Cookies.set(e2id(name) + "c_" + pair, e.checked);
+	}
   </script>
 </head>
 <body>
@@ -73,10 +78,10 @@
 <thead>
   <tr class="text-center">
 	<th class="explain"></th>
-	<th>IndependentReserve</th>
-	<th>BTCMarkets</th>
-	<th>Coinjar</th>
-	<th>Kraken</th>
+	<th>IndependentReserve <input type="checkbox" id="independentreserve" onclick="toggle('independentreserve', this)" /></th>
+	<th>BTCMarkets <input type="checkbox" id="btcmarkets" onclick="toggle('btcmarkets', this)" /></th>
+	<th>Coinjar <input type="checkbox" id="coinjar" onclick="toggle('coinjar', this)" /></th>
+	<th>Kraken <input type="checkbox" id="kraken" onclick="toggle('kraken', this)" /></th>
   </tr>
 </thead>
 <tbody>
@@ -241,6 +246,24 @@
   document.getElementById('lvl2').value = lvl2;
   var bestbid = 1.0, bestask = 1.0;
   var DateTime = luxon.DateTime;
+  state = {
+	independentreserve: Cookies.get("ic_"+pair) === "true" || Cookies.get("ic_"+pair) === undefined,
+	btcmarkets: Cookies.get("bc_"+pair) === "true" || Cookies.get("bc_"+pair) === undefined,
+	coinjar: Cookies.get("cc_"+pair) === "true" || Cookies.get("cc_"+pair) === undefined,
+	kraken: Cookies.get("kc_"+pair) === "true" || Cookies.get("kc_"+pair) === undefined,
+  };
+  if (state.independentreserve) {
+  	document.getElementById("independentreserve").setAttribute("checked", true);
+  }
+  if (state.btcmarkets) {
+	document.getElementById("btcmarkets").setAttribute("checked", true);
+  }
+  if (state.coinjar) {
+	document.getElementById("coinjar").setAttribute("checked", true);
+  }
+  if (state.kraken) {
+	document.getElementById("kraken").setAttribute("checked", true);
+  }
 
   // volume threashold processing
   const vtInput = document.getElementById("vt");
@@ -283,7 +306,7 @@
   lvl2Input.addEventListener('input', (e) => {
 	try {
 	  if (e.target && e.target.value) {
-	  	lvl1 = parseFloat(e.target.value);
+	  	lvl2 = parseFloat(e.target.value);
 		Cookies.set(`${pair}_lvl2`, e.target.value);
 	  } else {
 		lvl2 = 0.0;
@@ -291,7 +314,7 @@
 	  }
 	} catch(e) {
 	  console.log("error: " + e);
-	  lvl1 = 0.0;
+	  lvl2 = 0.0;
 	  Cookies.remove(`${pair}_lvl2`);
 	}
   });
@@ -319,19 +342,38 @@
 	}
   };
 
+  // level1 alert sound
   const audioMap = {
 	btcaud: new Audio("btcaud.mp3"),
 	usdtaud: new Audio("usdtaud.mp3"),
 	usdcaud: new Audio("usdcaud.mp3"),
   };
 
+  // level2 alert sound
+  const audioMap2 = {
+	btcaud: new Audio("btcaud2.mp3"),
+	usdtaud: new Audio("usdtaud2.mp3"),
+	usdcaud: new Audio("usdcaud2.mp3"),
+  };
+
   // default check
-  var alertCheck = setInterval(() => {
-	if (arb > 0 && arb > lvl1) {
-	  console.log("play" + pair);
-	  audioMap[pair].play();
+  let checkfunc = () => {
+	if (lvl2 <= lvl1) {
+	  if (arb > 0 && arb >= lvl1) {
+		console.log(`play ${lvl1} ${lvl2}`);
+		audioMap[pair].play();
+	  }
+	} else if (arb > 0) {
+	  if (arb >= lvl1 && arb < lvl2) {
+		console.log(`play ${lvl1} ${lvl2}`);
+		audioMap[pair].play();
+	  } else if (arb >= lvl2) {
+		console.log("play2");
+		audioMap2[pair].play();
+	  }
 	}
-  }, interval);
+  };
+  var alertCheck = setInterval(checkfunc, interval);
 
   const soundInput = document.getElementById("sd");
   soundInput.addEventListener("input", (e) => {
@@ -342,12 +384,7 @@
 		if (alertCheck) {
 		  clearInterval(alertCheck);
 		}
-		alertCheck = setInterval(() => {
-		  if (arb > 0) {
-			console.log("play " + pair);
-			audioMap[pair].play();
-		  }
-		}, interval);
+		alertCheck = setInterval(checkfunc, interval);
 	  } else {
 		Cookies.remove(`${pair}_sd`);
 	  }
@@ -406,13 +443,18 @@
 		document.getElementById(e2id(v) + "v").innerHTML = numeral(obj.volume[v]).format('0,0.00');
 	  }
 	  for (let p in obj.last_price) {
-		document.getElementById(e2id(p) + "l").innerHTML = obj.last_price[p];
+		document.getElementById(e2id(p) + "l").innerHTML = numeral(obj.last_price[p]).format(formatMap[pair].price);
 	  }
 	  let countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
 	  let index = 0;
+	  let acc = 0.0; // accumulated volume
 	  for (let i=0; i<obj.bids.length; i++) {
 		// dynamically create ids in the html components
 		let level = obj.bids[i];
+		if (!state[level.exchange]) {
+		  index += 1;
+		  continue;
+		}
 		let id = e2id(level.exchange);
 		let counter = countermap[id];
 		let key = id + 'b' + counter;
@@ -421,7 +463,8 @@
 		if (i == index) {
 		  try {
 			let amount = parseFloat(level.amount);
-			if (amount < vt) {
+			acc += amount;
+			if (acc < vt) {
 			  index += 1;
 			} else {
 			  attr = "background-color: green";
@@ -443,8 +486,13 @@
 	  }
 	  countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
 	  index = 0;
+	  acc = 0.0;
 	  for (let i=0; i<obj.asks.length; i++) {
 		let level = obj.asks[i];
+        if (!state[level.exchange]) {
+		  index += 1;
+		  continue;
+		}
 		let id = e2id(level.exchange);
 		let counter = countermap[id];
 		let key = id + 'a' + counter;
@@ -453,7 +501,8 @@
 		if (i == index) {
 		  try {
 			let amount = parseFloat(level.amount);
-			if (amount >= vt) {
+			acc += amount;
+			if (acc >= vt) {
 			  attr = "background-color: green";
 			  bestask = parseFloat(level.price);
 			  arb = ((bestbid / bestask) - 1.) * 100.;
