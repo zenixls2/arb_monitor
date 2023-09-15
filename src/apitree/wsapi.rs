@@ -2,6 +2,7 @@ use crate::orderbook::{Orderbook, Side};
 use anyhow::{anyhow, Result};
 use bigdecimal::BigDecimal;
 use formatx::formatx;
+use log::error;
 use once_cell::sync::Lazy;
 use phf::phf_map;
 use serde::Deserialize;
@@ -195,6 +196,8 @@ static BTCMARKETS: Lazy<Mutex<HashMap<String, Orderbook>>> =
 fn btcmarkets_clear() {
     let mut tmp = BTCMARKETS.lock().unwrap();
     tmp.clear();
+    // 3 connections every 10 secs
+    std::thread::sleep(std::time::Duration::from_secs(4));
 }
 
 fn btcmarkets_parser(raw: String) -> Result<Option<Orderbook>> {
@@ -210,7 +213,7 @@ fn btcmarkets_parser(raw: String) -> Result<Option<Orderbook>> {
         volume: String,
         #[serde(rename = "messageType")]
         message_type: String,
-        #[serde(rename = "marketId")]
+        #[serde(default, rename = "marketId")]
         market_id: String,
     }
     let result: WsEvent = serde_json::from_str(&raw).map_err(|e| anyhow!("{:?}", e))?;
@@ -240,6 +243,8 @@ fn btcmarkets_parser(raw: String) -> Result<Option<Orderbook>> {
         ob.last_price = BigDecimal::from_str(&result.last_price).map_err(|e| anyhow!("{:?}", e))?;
         ob.volume = BigDecimal::from_str(&result.volume).map_err(|e| anyhow!("{:?}", e))?;
         return Ok(Some(ob.clone()));
+    } else {
+        error!("btcmarket error dump: {}", raw);
     }
     Ok(None)
 }

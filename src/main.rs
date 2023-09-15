@@ -15,9 +15,11 @@ use config::ExchangeSetting;
 use exchange::Exchange;
 use futures_util::StreamExt;
 use log::{error, info};
+use once_cell::sync::Lazy;
 use orderbook::{AggregatedOrderbook, Orderbook};
 use std::collections::HashMap;
 use std::string::String;
+use std::sync::Mutex;
 use std::vec::Vec;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
@@ -49,6 +51,8 @@ impl Session {
     }
 }
 
+static CACHE: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+
 impl Actor for Session {
     type Context = ws::WebsocketContext<Self>;
     fn started(&mut self, ctx: &mut Self::Context) {
@@ -56,6 +60,11 @@ impl Actor for Session {
             e.map(|s| ws::Message::Text(s.into()))
                 .map_err(|e| ws::ProtocolError::Io(std::io::Error::other(e)))
         });
+        // send previous record on connect
+        let tmp = CACHE.lock().unwrap();
+        if tmp.is_some() {
+            ctx.text(tmp.clone().unwrap());
+        }
         ctx.add_stream(rx);
     }
 }
@@ -65,6 +74,7 @@ type WsResult = Result<ws::Message, ws::ProtocolError>;
 impl StreamHandler<WsResult> for Session {
     fn handle(&mut self, msg: WsResult, ctx: &mut Self::Context) {
         if msg.is_err() {
+            error!("{:?}", msg);
             ctx.stop();
             return;
         }
@@ -116,26 +126,24 @@ async fn executor(
         match client.next().await {
             Ok(Some(orderbook)) => {
                 tx.send((exchange.clone(), orderbook))?;
+                continue;
             }
             Ok(None) => {
-                info!("shutdown {}", exchange);
-                break;
+                error!("shutdown {}", exchange);
             }
             Err(e) => {
                 error!("{}, reconnect...", e);
-                if let Err(e) = client.clear() {
-                    error!("{}, clear error", e);
-                }
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                client = Exchange::new(&exchange);
-                if let Err(e) = client.connect(pairs.clone()).await {
-                    error!("{}, connect error {}", e, exchange);
-                }
-                error!("connect {}", exchange);
             }
         }
+        if let Err(e) = client.clear() {
+            error!("{}, clear error", e);
+        }
+        client = Exchange::new(&exchange);
+        if let Err(e) = client.connect(pairs.clone()).await {
+            error!("{}, connect error {}", e, exchange);
+        }
+        error!("connect {}", exchange);
     }
-    Ok(())
 }
 
 async fn setup_marketdata(
@@ -207,7 +215,8 @@ async fn main() -> Result<()> {
     // default consumer
     tokio::spawn(async move {
         while let Ok(item) = brx.recv().await {
-            info!("Summary {:?}", item);
+            let mut tmp = CACHE.lock().unwrap();
+            info!("Summary {}", tmp.insert(item));
         }
     });
 
