@@ -21,12 +21,58 @@ impl Dummy {
                 endpoint: "https://api.independentreserve.com",
                 orderbook: Box::new(|s| Box::pin(independentreserve_orderbook(s))),
             }),
+            "btcmarkets" => Some(Api {
+                endpoint: "https://api.btcmarkets.net",
+                orderbook: Box::new(|s| Box::pin(btcmarkets_orderbook(s))),
+            }),
             _ => None,
         }
     }
 }
 
 pub static REST_APIMAP: Dummy = Dummy {};
+
+async fn btcmarkets_orderbook(pair: String) -> Result<Orderbook> {
+    let api = REST_APIMAP.get("btcmarkets").unwrap();
+    #[derive(Deserialize, Debug)]
+    struct OrderbookSnapshot {
+        asks: Vec<[String; 2]>,
+        bids: Vec<[String; 2]>,
+    }
+    #[derive(Deserialize, Debug)]
+    struct MarketSummary {
+        volume24h: String,
+        #[serde(rename = "lastPrice")]
+        last_price: String,
+    }
+    let endpoint = api.endpoint;
+    let api = format!("{}/v3/markets/{}/orderbook", endpoint, pair);
+    info!("calling {}...", api);
+    let response = reqwest::get(&api).await.map_err(|e| anyhow!("{:?}", e))?;
+    let shot: OrderbookSnapshot = response.json().await.map_err(|e| anyhow!("{}", e))?;
+
+    let api = format!("{}/v3/markets/{}/ticker", endpoint, pair);
+    info!("calling {}...", api);
+    let response = reqwest::get(&api).await.map_err(|e| anyhow!("{:?}", e))?;
+    let sum: MarketSummary = response.json().await.map_err(|e| anyhow!("{}", e))?;
+    let mut ob = Orderbook::new("btcmarkets");
+
+    for [p, v] in shot.bids {
+        let price = BigDecimal::from_str(&p).map_err(|e| anyhow!("parse price fail: {:?}", e))?;
+        let volume = BigDecimal::from_str(&v).map_err(|e| anyhow!("parse volume fail: {:?}", e))?;
+        ob.insert(Side::Bid, price, volume);
+    }
+    for [p, v] in shot.asks {
+        let price = BigDecimal::from_str(&p).map_err(|e| anyhow!("parse price fail: {:?}", e))?;
+        let volume = BigDecimal::from_str(&v).map_err(|e| anyhow!("parse volume fail: {:?}", e))?;
+        ob.insert(Side::Ask, price, volume);
+    }
+    ob.last_price = BigDecimal::from_str(&sum.last_price)
+        .map_err(|e| anyhow!("parse last_price fail: {:?}", e))?;
+    ob.volume =
+        BigDecimal::from_str(&sum.volume24h).map_err(|e| anyhow!("parse volume fail: {:?}", e))?;
+    Ok(ob)
+}
 
 async fn independentreserve_orderbook(pair: String) -> Result<Orderbook> {
     let api = REST_APIMAP.get("independentreserve").unwrap();
