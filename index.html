@@ -53,26 +53,31 @@
 	<button id="usdtaud" class="btn btn-outline-secondary" onclick="reload('usdtaud')" type="button">USDT/AUD</button>
 	<button id="usdcaud" class="btn btn-outline-secondary" onclick="reload('usdcaud')" type="button">USDC/AUD</button>
   </div>
-  <div class="input-group col">
+  <div class="input-group me-2 col">
 	<div class="input-group-text" id="vt_text">Volume Threshold: </div>
 	<input id="vt" placeholder="Volume Threshold" class="form-control" type="text" name="vt" />
   </div>
-  <div class="input-group col">
+  <div class="input-group me-2 col">
 	<div class="input-group-text" id="sd_text">Alert Interval(ms):</div>
 	<input id="sd" class="form-control" placeholder="1000" type="number" value="1000" name="sd" />
   </div>
 </div>
 </div>
 <div class="row" style="width: 960px;">
-  <div class="input-group col">
+<div class="btn-toolbar mb-3" role="toolbar">
+  <div class="input-group col me-2">
 	<div class="input-group-text">Spread(%) level1 Alert:</div>
 	<input id="lvl1" class="form-control" placeholder="0.0" type="number" name="lvl1" value="0.0"/>
   </div>
-  <div class="input-group col">
+  <div class="input-group col me-2">
 	<div class="input-group-text">Spread(%) level2 Alert:</div>
 	<input id="lvl2" class="form-control" placeholder="0.0" type="number" name="lvl2" value="0.0"/>
   </div>
+  <div class="input-group col">
+  	<label class="form-label col">Audio Volume:</label>
+	<input id="avol" class="form-range col" type="range" value="1.0" name="avol" min="0" max="1.0" step="0.1"/>
   </div>
+</div>
 </div>
 <table>
 <thead>
@@ -245,6 +250,8 @@
   var lvl2 = parseFloat(Cookies.get(`${pair}_lvl2`) || '0.0');
   document.getElementById('lvl2').value = lvl2;
   var bestbid = 1.0, bestask = 1.0;
+  var audioVol = parseFloat(Cookies.get(`${pair}_avol`) || '1.0');
+  document.getElementById('avol').value = audioVol;
   var DateTime = luxon.DateTime;
   state = {
 	independentreserve: Cookies.get("ic_"+pair) === "true" || Cookies.get("ic_"+pair) === undefined,
@@ -263,6 +270,28 @@
   }
   if (state.kraken) {
 	document.getElementById("kraken").setAttribute("checked", true);
+  }
+
+  // level1 alert sound
+  var audioMap = {
+	btcaud: new Audio("btcaud.mp3"),
+	usdtaud: new Audio("usdtaud.mp3"),
+	usdcaud: new Audio("usdcaud.mp3"),
+  };
+
+  // level2 alert sound
+  var audioMap2 = {
+	btcaud: new Audio("btcaud2.mp3"),
+	usdtaud: new Audio("usdtaud2.mp3"),
+	usdcaud: new Audio("usdcaud2.mp3"),
+  };
+
+  for([key, audio] of Object.entries(audioMap)) {
+	audio.volume = audioVol;
+  }
+
+  for([key, audio] of Object.entries(audioMap2)) {
+	audio.volume = audioVol;
   }
 
   // volume threashold processing
@@ -298,6 +327,30 @@
 	  console.log("error: " + e);
 	  lvl1 = 0.0;
 	  Cookies.remove(`${pair}_lvl1`);
+	}
+  });
+
+  const avolInput = document.getElementById('avol');
+  avolInput.addEventListener('input', (e) => {
+	try {
+	  if (e.target && e.target.value) {
+	  	audioVol = parseFloat(e.target.value);	
+		Cookies.set(`${pair}_avol`, e.target.value);
+	  } else {
+		audioVol = 1.0;
+		Cookies.remove(`${pair}_avol`);
+	  } 
+	} catch(e) {
+	  console.log("error: " + e);
+	  audioVol = 1.0;
+	  Cookies.remove(`${pair}_avol`);
+	}
+	for([key, audio] of Object.entries(audioMap)) {
+	  audio.volume = audioVol;
+	}
+
+	for([key, audio] of Object.entries(audioMap2)) {
+	  audio.volume = audioVol;
 	}
   });
 
@@ -340,21 +393,7 @@
 	} else {
 	  throw new Error(`unsupport pair: ${pair}`);
 	}
-  };
-
-  // level1 alert sound
-  const audioMap = {
-	btcaud: new Audio("btcaud.mp3"),
-	usdtaud: new Audio("usdtaud.mp3"),
-	usdcaud: new Audio("usdcaud.mp3"),
-  };
-
-  // level2 alert sound
-  const audioMap2 = {
-	btcaud: new Audio("btcaud2.mp3"),
-	usdtaud: new Audio("usdtaud2.mp3"),
-	usdcaud: new Audio("usdcaud2.mp3"),
-  };
+  }; 
 
   // default check
   let checkfunc = () => {
@@ -407,11 +446,7 @@
   button.classList.add("btn-primary");
 
   // determine domain.
-  let domain = "170.64.200.82";
-  if (window.location.hostname !== "localhost" &&
-	window.location.hostname != "127.0.0.1") {
-	domain = window.location.hostname;
-  }
+  let domain = window.location.hostname;
 
   let connect = () => {
 	// create ws socket base on the rendered domain and port.
