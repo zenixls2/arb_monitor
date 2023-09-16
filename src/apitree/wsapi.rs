@@ -280,13 +280,13 @@ fn coinjar_parser(raw: String) -> Result<Option<Orderbook>> {
         #[derive(Deserialize, Debug)]
         struct Payload {
             #[serde(default)]
-            volume: String,
+            volume_24h: String,
             #[serde(default)]
             last: String,
         }
         let result: Payload =
             serde_json::from_value(result.payload.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        ob.volume = BigDecimal::from_str(&result.volume).map_err(|e| anyhow!("{:?}", e))?;
+        ob.volume = BigDecimal::from_str(&result.volume_24h).map_err(|e| anyhow!("{:?}", e))?;
         ob.last_price = BigDecimal::from_str(&result.last).map_err(|e| anyhow!("{:?}", e))?;
         return Ok(Some(ob.clone()));
     } else if result.topic.starts_with("book") {
