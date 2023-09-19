@@ -222,6 +222,39 @@ To check the log:
 journalctl -u btcaud.service
 ```
 
+### File path in production server
+
+- /var/www/html/index.html
+- /var/www/html/usdcaud.mp3
+- /var/www/html/usdtaud.mp3
+- /var/www/html/btcaud.mp3
+- /var/www/html/btcaud2.mp3
+- /var/www/html/usdcaud2.mp3
+- /var/www/html/usdtaud2.mp3
+- /etc/nginx/.htpasswd
+- /etc/nginx/sites-enabled/default
+- /lib/systemd/system/btcaud.service
+- /lib/systemd/system/usdtaud.service
+- /lib/systemd/system/usdcaud.service
+- /root/arb_monitor
+
+To upgrade arb_monitor from the artifact.zip from github action, we need to stop these 3 services first:
+
+```bash
+systemctl stop btcaud.service
+systemctl stop usdtaud.service
+systemctl stop usdcaud.service
+```
+
+And upload the arb_monitor file to the root home directory:
+
+```bash
+# from host machine
+scp arb_monitor root@{server_ip}:~/
+```
+
+The basic auth username and password is recorded in `/etc/nginx/.htpasswd`.
+
 ### Development
 
 TBD
