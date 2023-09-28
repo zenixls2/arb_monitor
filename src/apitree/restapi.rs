@@ -3,37 +3,30 @@ use anyhow::{anyhow, Result};
 use bigdecimal::BigDecimal;
 use futures_util::future::Future;
 use log::info;
+use phf::phf_map;
 use serde::Deserialize;
 use std::pin::Pin;
 use std::str::FromStr;
 
+type BoxFuture = Pin<Box<dyn Future<Output = Result<Orderbook>> + Send>>;
+
 pub struct Api {
     pub endpoint: &'static str,
-    pub orderbook: Box<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<Orderbook>>>>>,
+    pub orderbook: fn(String) -> BoxFuture,
 }
 
-pub struct Dummy {}
-
-impl Dummy {
-    pub fn get(&self, name: &str) -> Option<Api> {
-        match name {
-            "independentreserve" => Some(Api {
-                endpoint: "https://api.independentreserve.com",
-                orderbook: Box::new(|s| Box::pin(independentreserve_orderbook(s))),
-            }),
-            "btcmarkets" => Some(Api {
-                endpoint: "https://api.btcmarkets.net",
-                orderbook: Box::new(|s| Box::pin(btcmarkets_orderbook(s))),
-            }),
-            _ => None,
-        }
+pub static REST_APIMAP: phf::Map<&'static str, Api> = phf_map! {
+    "independentreserve" => Api {
+        endpoint: "https://api.independentreserve.com",
+        orderbook: |s| Box::pin(independentreserve_orderbook(s)),
+    },
+    "btcmarkets" => Api {
+        endpoint: "https://api.btcmarkets.net",
+        orderbook: |s| Box::pin(btcmarkets_orderbook(s)),
     }
-}
-
-pub static REST_APIMAP: Dummy = Dummy {};
+};
 
 async fn btcmarkets_orderbook(pair: String) -> Result<Orderbook> {
-    let api = REST_APIMAP.get("btcmarkets").unwrap();
     #[derive(Deserialize, Debug)]
     struct OrderbookSnapshot {
         asks: Vec<[String; 2]>,
@@ -45,15 +38,24 @@ async fn btcmarkets_orderbook(pair: String) -> Result<Orderbook> {
         #[serde(rename = "lastPrice")]
         last_price: String,
     }
-    let endpoint = api.endpoint;
-    let api = format!("{}/v3/markets/{}/orderbook", endpoint, pair);
-    info!("calling {}...", api);
-    let response = reqwest::get(&api).await.map_err(|e| anyhow!("{:?}", e))?;
+    let (ob_api, ticker_api) = {
+        let rest = REST_APIMAP.get("btcmarkets").unwrap();
+        let endpoint = rest.endpoint;
+        (
+            format!("{}/v3/markets/{}/orderbook", endpoint, pair),
+            format!("{}/v3/markets/{}/ticker", endpoint, pair),
+        )
+    };
+    info!("calling {}...", ob_api);
+    let response = reqwest::get(&ob_api)
+        .await
+        .map_err(|e| anyhow!("{:?}", e))?;
     let shot: OrderbookSnapshot = response.json().await.map_err(|e| anyhow!("{}", e))?;
 
-    let api = format!("{}/v3/markets/{}/ticker", endpoint, pair);
-    info!("calling {}...", api);
-    let response = reqwest::get(&api).await.map_err(|e| anyhow!("{:?}", e))?;
+    info!("calling {}...", ticker_api);
+    let response = reqwest::get(&ticker_api)
+        .await
+        .map_err(|e| anyhow!("{:?}", e))?;
     let sum: MarketSummary = response.json().await.map_err(|e| anyhow!("{}", e))?;
     let mut ob = Orderbook::new("btcmarkets");
 
@@ -75,7 +77,6 @@ async fn btcmarkets_orderbook(pair: String) -> Result<Orderbook> {
 }
 
 async fn independentreserve_orderbook(pair: String) -> Result<Orderbook> {
-    let api = REST_APIMAP.get("independentreserve").unwrap();
     #[derive(Deserialize, Debug)]
     #[serde(rename_all = "PascalCase")]
     struct Level {
@@ -101,21 +102,30 @@ async fn independentreserve_orderbook(pair: String) -> Result<Orderbook> {
             pair
         ));
     }
-    let endpoint = api.endpoint;
-    let api = format!(
-        "{}/Public/GetOrderbook?primaryCurrencyCode={}&secondaryCurrencyCode={}",
-        endpoint, args[0], args[1]
-    );
-    info!("calling {}...", api);
-    let response = reqwest::get(&api).await.map_err(|e| anyhow!("{:?}", e))?;
+    let (ob_api, sum_api) = {
+        let api = REST_APIMAP.get("independentreserve").unwrap();
+        let endpoint = api.endpoint;
+        (
+            format!(
+                "{}/Public/GetOrderbook?primaryCurrencyCode={}&secondaryCurrencyCode={}",
+                endpoint, args[0], args[1]
+            ),
+            format!(
+                "{}/Public/GetMarketSummary?primaryCurrencyCode={}&secondaryCurrencyCode={}",
+                endpoint, args[0], args[1]
+            ),
+        )
+    };
+    info!("calling {}...", ob_api);
+    let response = reqwest::get(&ob_api)
+        .await
+        .map_err(|e| anyhow!("{:?}", e))?;
     let shot: OrderbookSnapshot = response.json().await.map_err(|e| anyhow!("{}", e))?;
 
-    let api = format!(
-        "{}/Public/GetMarketSummary?primaryCurrencyCode={}&secondaryCurrencyCode={}",
-        endpoint, args[0], args[1]
-    );
-    info!("calling {}...", api);
-    let response = reqwest::get(&api).await.map_err(|e| anyhow!("{:?}", e))?;
+    info!("calling {}...", sum_api);
+    let response = reqwest::get(&sum_api)
+        .await
+        .map_err(|e| anyhow!("{:?}", e))?;
     let sum: MarketSummary = response.json().await.map_err(|e| anyhow!("{}", e))?;
     let mut ob = Orderbook::new("independentreserve");
     for level in shot.buy_orders {

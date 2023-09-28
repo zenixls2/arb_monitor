@@ -13,7 +13,6 @@ actix-web = "4.3.1"
 actix-web-actors = "4.2.0"
 actix-web-codegen = "4.2.2"
 anyhow = "1.0.75"
-awc = { version = "3.1.1", features = ["rustls"] }
 bigdecimal = "0.4.1"
 clap = { version = "4.4.0", features = ["derive"] }
 fern = "0.6.2"
@@ -28,4 +27,5 @@ serde_json = "1.0.105"
 serde_yaml = "0.9.25"
 tokio = { version = "1.32.0", features = ["rt", "macros", "rt-multi-thread"] }
 tokio-stream = { version = "0.1.14", features = ["sync"] }
+tokio-tungstenite = { version = "0.20.1", features = ["rustls", "tokio-rustls", "native-tls"] }
 tokio-util = "0.7.8"

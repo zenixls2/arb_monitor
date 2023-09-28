@@ -285,7 +285,7 @@ fn coinjar_parser(raw: String) -> Result<Option<Orderbook>> {
             last: String,
         }
         let result: Payload =
-            serde_json::from_value(result.payload.clone()).map_err(|e| anyhow!("{:?}", e))?;
+            serde_json::from_value(result.payload).map_err(|e| anyhow!("{:?}", e))?;
         ob.volume = BigDecimal::from_str(&result.volume_24h).map_err(|e| anyhow!("{:?}", e))?;
         ob.last_price = BigDecimal::from_str(&result.last).map_err(|e| anyhow!("{:?}", e))?;
         return Ok(Some(ob.clone()));
@@ -309,7 +309,7 @@ fn coinjar_parser(raw: String) -> Result<Option<Orderbook>> {
             asks: Vec<[String; 2]>,
         }
         let result: Payload =
-            serde_json::from_value(result.payload.clone()).map_err(|e| anyhow!("{:?}", e))?;
+            serde_json::from_value(result.payload).map_err(|e| anyhow!("{:?}", e))?;
         for [price_str, quantity_str] in result.bids {
             let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
             let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
@@ -368,7 +368,7 @@ fn kraken_parser(raw: String) -> Result<Option<Orderbook>> {
             tmp.insert(key.clone(), Orderbook::new("kraken"));
             tmp.get_mut(key).unwrap()
         };
-        if data.bs.len() > 0 || data.r#as.len() > 0 {
+        if !data.bs.is_empty() || !data.r#as.is_empty() {
             ob.bid.clear();
             ob.ask.clear();
         }
@@ -397,7 +397,7 @@ fn kraken_parser(raw: String) -> Result<Option<Orderbook>> {
             ob.insert(Side::Ask, price, quantity);
         }
         return Ok(Some(ob.clone()));
-    } else if channel_name == "ticker".to_string() {
+    } else if channel_name == *"ticker" {
         // data:
         // - a: best ask [3]
         // - b: best bid [3]

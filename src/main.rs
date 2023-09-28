@@ -156,11 +156,8 @@ async fn setup_marketdata(
     for (exchange, settings) in exchange_pairs {
         info!("loading {}: {:?}", exchange, settings);
         let ltx = itx.clone();
-        threads.push(std::thread::spawn(move || {
-            let system = actix::System::new();
-            let runtime = system.runtime();
-            let result = runtime.block_on(executor(exchange.clone(), settings.clone(), ltx));
-            if let Err(e) = result {
+        threads.push(tokio::spawn(async move {
+            if let Err(e) = executor(exchange.clone(), settings.clone(), ltx).await {
                 error!("exchange client spawn error: {}", e);
             }
         }));
