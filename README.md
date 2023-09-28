@@ -1,7 +1,7 @@
-Arbitrage Monitor For Australia Exchanges
------------------------------------------
+## Arbitrage Monitor For Australia Exchanges
 
 The arbitrage monitor application right now supports the following exchanges:
+
 - binance (orderbook only, websocket api only)
 - bitstamp (orderbook only, webssocket api only)
 - independentreserve (full functionality, respful api only)
@@ -17,26 +17,26 @@ Currently there's no authentication middleware protection for the websocket serv
 The example configuration stores in `config/config.yaml` in yaml format.
 
 - `exchange_pair_map` object map:
-    contains the exchange related configuration.
+  contains the exchange related configuration.
 
->> ```yaml
->> Format:
->> {exchange_name}:
->>   - pair: {pair_name}
->>     # independentreserve: {Token1}-{token2}
->>     # btcmarkets: {TOKEN1}-{TOKEN1}
->>     # conijar: {TOKEN1}{TOKEN2}
->>     # kraken: {TOKEN1}/{TOKEN2}
->>     # Notice XBT means BTC
->>   - ws_api: {bool}
->>     # (optional)
->>     # true for using websocket api, false for using restful api
->>     # currently only independentreserve supports restful api, the others support only websocket
->>   - wait_secs: {int}
->>     # (optional, functional when ws_api is false)
->>     # default value: 3
->>     # this sets the interval for polling orderbooks using restful api
->> ```
+> > ```yaml
+> > Format:
+> > { exchange_name }:
+> >         - pair: { pair_name }
+> >           # independentreserve: {Token1}-{token2}
+> >           # btcmarkets: {TOKEN1}-{TOKEN1}
+> >           # conijar: {TOKEN1}{TOKEN2}
+> >           # kraken: {TOKEN1}/{TOKEN2}
+> >           # Notice XBT means BTC
+> >         - ws_api: { bool }
+> >           # (optional)
+> >           # true for using websocket api, false for using restful api
+> >           # currently only independentreserve supports restful api, the others support only websocket
+> >         - wait_secs: { int }
+> >           # (optional, functional when ws_api is false)
+> >           # default value: 3
+> >           # this sets the interval for polling orderbooks using restful api
+> > ```
 
 - `server_addr`:
   (optional) string.
@@ -66,11 +66,19 @@ The example configuration stores in `config/config.yaml` in yaml format.
 
 ### Preparation
 
-This project is construct usign rust. In order to run this project, you need to compile it to binaries first.
+This project is construct using rust. In order to run this project, you need to compile it to binaries first.
+
+0. Install Packages
+   Suppose you're using ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y curl libssl-dev gcc pkg-config openssl
+```
 
 1. Install Rust
-Any Unix-like OS should be able to install Rust. Windows could also install rust inside the WSL environment.
-All you need to do is just install using the following command:
+   Any Unix-like OS should be able to install Rust. Windows could also install rust inside the WSL environment.
+   All you need to do is just install using the following command:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -83,7 +91,6 @@ after setup, try the following command to check the rust version to see if night
 ```bash
 rustc --version
 ```
-
 
 2. Clone this repo
 
@@ -103,7 +110,7 @@ cd arb_monitor && cargo test
 
 4. Compile
 
-Suppose you're already in the arb\_monitor folder, run the following command:
+Suppose you're already in the arb_monitor folder, run the following command:
 
 ```bash
 cargo build
@@ -120,7 +127,6 @@ cargo build --release
 ```
 
 The output binaries will be inside `target/release` instead.
-
 
 ### Execution
 
@@ -149,7 +155,7 @@ If you're in the project root, simply run:
 
 and the service will start running.
 
-The default configuration is stored in `config/config.yaml`. 
+The default configuration is stored in `config/config.yaml`.
 
 ### Visualization
 
