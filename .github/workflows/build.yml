@@ -4,17 +4,17 @@ on:
   workflow_dispatch: # allow manual triggering
     inputs:
       create_release:
-        description: 'Create new release'
+        description: "Create new release"
         required: true
         type: boolean
   push:
     branches:
       - main
-    paths: ['.github/workflows/**', '**/Cargo.toml', '**/Cargo.lock', '**/*.rs']
+      - test
+    paths: [".github/workflows/**", "**/Cargo.toml", "**/Cargo.lock", "**/*.rs"]
   pull_request:
     types: [opened, synchronize, repoened]
-    paths: ['.github/workflows/**', '**/Cargo.toml', '**/Cargo.lock', '**/*.rs']
-
+    paths: [".github/workflows/**", "**/Cargo.toml", "**/Cargo.lock", "**/*.rs"]
 
 env:
   BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
@@ -24,23 +24,31 @@ jobs:
   build_and_test:
     name: build and test
     runs-on: ubuntu-latest
+    container: ubuntu:18.04
 
     steps:
+      - name: Packages
+        id: packages
+        run: apt update && apt install -y libssl-dev curl gcc openssl pkg-config
+
+      - name: Prepare
+        id: prepare
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+
       - name: Clone
         id: checkout
         uses: actions/checkout@v1
 
-      - name: Dependencies
-        id: depends
-        run: rustup update nightly && rustup default nightly
-
       - name: build
         id: build
-        run: cargo build --release
-      
+        run: OPENSSL_STATIC=1 OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu/ OPENSSL_INCLUDE_DIR=/usr/include cargo build --release
+
       - name: test
         id: test
-        run: cargo test --release
+        run: OPENSSL_STATIC=1 OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu/ OPENSSL_INCLUDE_DIR=/usr/include cargo test --release
 
       - name: upload
         if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) }}
