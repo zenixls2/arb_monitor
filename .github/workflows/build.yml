@@ -29,27 +29,26 @@ jobs:
     steps:
       - name: Packages
         id: packages
-        run: sudo apt update && sudo apt install -y libssl-dev
+        run: apt update && apt install -y libssl-dev curl gcc openssl pkg-config
 
       - name: Prepare
         id: prepare
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
 
       - name: Clone
         id: checkout
         uses: actions/checkout@v1
 
-      - name: Dependencies
-        id: depends
-        run: rustup update nightly && rustup default nightly
-
       - name: build
         id: build
-        run: OPENSSL_STATIC=1 OPENSSL_LIB_DIR=/lib/x86_64-linux-gnu/ OPENSSL_INCLUDE_DIR=/usr/include cargo build --release
+        run: OPENSSL_STATIC=1 OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu/ OPENSSL_INCLUDE_DIR=/usr/include cargo build --release
 
       - name: test
         id: test
-        run: OPENSSL_STATIC=1 OPENSSL_LIB_DIR=/lib/x86_64-linux-gnu/ OPENSSL_INCLUDE_DIR=/usr/include cargo test --release
+        run: OPENSSL_STATIC=1 OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu/ OPENSSL_INCLUDE_DIR=/usr/include cargo test --release
 
       - name: upload
         if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) }}
