@@ -71,6 +71,7 @@ fn binance_parser(raw: String) -> Result<Option<Orderbook>> {
         let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
         ob.insert(Side::Ask, price, quantity);
     }
+    ob.trim(20);
     Ok(Some(ob))
 }
 
@@ -184,6 +185,8 @@ fn indreserve_parser(raw: String) -> Result<Option<Orderbook>> {
                 .map_err(|e| anyhow!("parse volume fail: {} {:?}", volume, e))?;
             ob.insert(Side::Ask, p, v);
         }
+        // since we subscribe the first 20
+        ob.trim(20);
         Ok(Some(ob.clone()))
     } else {
         Err(anyhow!("orderbook not exist for {}", result.channel))
@@ -238,6 +241,8 @@ fn btcmarkets_parser(raw: String) -> Result<Option<Orderbook>> {
             let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
             ob.insert(Side::Ask, price, quantity);
         }
+        // btcmarkets sends orderbook of 50 levels
+        ob.trim(50);
         return Ok(Some(ob.clone()));
     } else if result.message_type == "tick" {
         ob.last_price = BigDecimal::from_str(&result.last_price).map_err(|e| anyhow!("{:?}", e))?;
@@ -333,6 +338,7 @@ fn kraken_clear() {
 }
 
 fn kraken_parser(raw: String) -> Result<Option<Orderbook>> {
+    error!("{}", raw);
     if raw.as_bytes()[0] as char == '{' {
         return Ok(None);
     }
@@ -396,6 +402,10 @@ fn kraken_parser(raw: String) -> Result<Option<Orderbook>> {
             let quantity = BigDecimal::from_str(quantity_str).map_err(|e| anyhow!("{:?}", e))?;
             ob.insert(Side::Ask, price, quantity);
         }
+        // we're subscribing to book-25, so do cleanup here
+        // the exchange/mod.rs side could only get the cloned item,
+        // so the orderbook didn't explicitly trim the orderbook.
+        ob.trim(25);
         return Ok(Some(ob.clone()));
     } else if channel_name == "ticker".to_string() {
         // data:

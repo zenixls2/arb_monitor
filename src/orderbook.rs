@@ -47,6 +47,22 @@ impl Orderbook {
         // some exchange doesn't provide timestamp in their websocket events.
         // use local timestamp to have the same basis
         self.timestamp = get_unixtime();
+
+        let best_bid = self.bid.last_key_value().map(|(p, _)| p);
+        let best_ask = self.ask.first_key_value().map(|(p, _)| p);
+        if best_bid.is_some() && best_ask.is_some() {
+            if best_bid.unwrap() > best_ask.unwrap() {
+                panic!(
+                    "{}",
+                    format!(
+                        "{} crossed!, {} {}",
+                        self.name,
+                        best_bid.unwrap(),
+                        best_ask.unwrap()
+                    )
+                );
+            }
+        }
     }
     pub fn new(name: &str) -> Orderbook {
         Orderbook {
