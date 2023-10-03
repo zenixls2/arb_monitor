@@ -262,7 +262,6 @@ fn coinjar_clear() {
 }
 
 fn coinjar_parser(raw: String) -> Result<Option<Orderbook>> {
-    error!("{}", raw);
     #[derive(Deserialize, Debug)]
     struct WsEvent {
         event: String,

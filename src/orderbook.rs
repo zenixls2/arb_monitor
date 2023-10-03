@@ -1,5 +1,6 @@
 use anyhow::Result;
 use bigdecimal::{BigDecimal, Zero};
+use log::error;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Bound;
@@ -52,14 +53,11 @@ impl Orderbook {
         let best_ask = self.ask.first_key_value().map(|(p, _)| p);
         if best_bid.is_some() && best_ask.is_some() {
             if best_bid.unwrap() > best_ask.unwrap() {
-                panic!(
-                    "{}",
-                    format!(
-                        "{} crossed!, {} {}",
-                        self.name,
-                        best_bid.unwrap(),
-                        best_ask.unwrap()
-                    )
+                error!(
+                    "{} crossed!, {}, {}",
+                    self.name,
+                    best_bid.unwrap(),
+                    best_ask.unwrap()
                 );
             }
         }
