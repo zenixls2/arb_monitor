@@ -262,6 +262,7 @@ fn coinjar_clear() {
 }
 
 fn coinjar_parser(raw: String) -> Result<Option<Orderbook>> {
+    error!("{}", raw);
     #[derive(Deserialize, Debug)]
     struct WsEvent {
         event: String,
@@ -338,7 +339,6 @@ fn kraken_clear() {
 }
 
 fn kraken_parser(raw: String) -> Result<Option<Orderbook>> {
-    error!("{}", raw);
     if raw.as_bytes()[0] as char == '{' {
         return Ok(None);
     }
