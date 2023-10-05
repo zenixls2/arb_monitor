@@ -125,11 +125,13 @@ impl Exchange {
                 if wait_secs < now.elapsed().as_secs() {
                     info!("send heartbeat to {}", self.name);
                     self.heartbeat_ts = Some(Instant::now());
-                    result
+                    if let Err(e) = result
                         .send(awc::ws::Message::Binary(msg.into()))
                         .await
                         .map(|e| info!("{:?}", e))
-                        .map_err(|e| anyhow!("{:?}", e))?;
+                    {
+                        error!("heartbeat: {}", e);
+                    }
                 }
             }
             if let Some(result) = result.next().await {
@@ -156,7 +158,9 @@ impl Exchange {
 
                 debug!("{}: {}", self.name, raw);
 
-                if let Some(mut e) = (apitree::ws(&self.name)?.parse)(raw)? {
+                if let Some(mut e) = (apitree::ws(&self.name)?.parse)(&raw)
+                    .map_err(|e| anyhow!("{}: raw msg: {}", e, raw))?
+                {
                     e.trim(self.level);
                     return Ok(Some(e));
                 }
