@@ -230,21 +230,21 @@ fn btcmarkets_parser(raw: &str) -> Result<Option<Orderbook>> {
         ob.ask.clear();
         ob.bid.clear();
         for [price_str, quantity_str] in result.bids {
-            let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
-            let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+            let price = BigDecimal::from_str(&price_str)?;
+            let quantity = BigDecimal::from_str(&quantity_str)?;
             ob.insert(Side::Bid, price, quantity);
         }
         for [price_str, quantity_str] in result.asks {
-            let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
-            let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+            let price = BigDecimal::from_str(&price_str)?;
+            let quantity = BigDecimal::from_str(&quantity_str)?;
             ob.insert(Side::Ask, price, quantity);
         }
         // btcmarkets sends orderbook of 50 levels
         ob.trim(50);
         return Ok(Some(ob.clone()));
     } else if result.message_type == "tick" {
-        ob.last_price = BigDecimal::from_str(&result.last_price).map_err(|e| anyhow!("{:?}", e))?;
-        ob.volume = BigDecimal::from_str(&result.volume).map_err(|e| anyhow!("{:?}", e))?;
+        ob.last_price = BigDecimal::from_str(&result.last_price)?;
+        ob.volume = BigDecimal::from_str(&result.volume)?;
         return Ok(Some(ob.clone()));
     } else {
         error!("btcmarket error dump: {}", raw);
@@ -287,10 +287,9 @@ fn coinjar_parser(raw: &str) -> Result<Option<Orderbook>> {
             #[serde(default)]
             last: String,
         }
-        let result: Payload =
-            serde_json::from_value(result.payload.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        ob.volume = BigDecimal::from_str(&result.volume_24h).map_err(|e| anyhow!("{:?}", e))?;
-        ob.last_price = BigDecimal::from_str(&result.last).map_err(|e| anyhow!("{:?}", e))?;
+        let result: Payload = serde_json::from_value(result.payload.clone())?;
+        ob.volume = BigDecimal::from_str(&result.volume_24h)?;
+        ob.last_price = BigDecimal::from_str(&result.last)?;
         return Ok(Some(ob.clone()));
     } else if result.topic.starts_with("book") {
         let key = result.topic.replace("book:", "");
@@ -311,16 +310,15 @@ fn coinjar_parser(raw: &str) -> Result<Option<Orderbook>> {
             #[serde(default)]
             asks: Vec<[String; 2]>,
         }
-        let result: Payload =
-            serde_json::from_value(result.payload.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        let result: Payload = serde_json::from_value(result.payload.clone())?;
         for [price_str, quantity_str] in result.bids {
-            let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
-            let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+            let price = BigDecimal::from_str(&price_str)?;
+            let quantity = BigDecimal::from_str(&quantity_str)?;
             ob.insert(Side::Bid, price, quantity);
         }
         for [price_str, quantity_str] in result.asks {
-            let price = BigDecimal::from_str(&price_str).map_err(|e| anyhow!("{:?}", e))?;
-            let quantity = BigDecimal::from_str(&quantity_str).map_err(|e| anyhow!("{:?}", e))?;
+            let price = BigDecimal::from_str(&price_str)?;
+            let quantity = BigDecimal::from_str(&quantity_str)?;
             ob.insert(Side::Ask, price, quantity);
         }
         return Ok(Some(ob.clone()));
@@ -347,6 +345,13 @@ fn kraken_parser(raw: &str) -> Result<Option<Orderbook>> {
     let channel_name: String = serde_json::from_value(result[result.len() - 2].clone())?;
     let pair: String = serde_json::from_value(result[result.len() - 1].clone())?;
     let key = &pair;
+    let mut tmp = KRAKEN.lock().unwrap();
+    let ob = if let Some(ob) = tmp.get_mut(key) {
+        ob
+    } else {
+        tmp.insert(key.clone(), Orderbook::new("kraken"));
+        tmp.get_mut(key).unwrap()
+    };
     if channel_name.starts_with("book") {
         #[derive(Deserialize, Debug)]
         struct Data {
@@ -365,41 +370,38 @@ fn kraken_parser(raw: &str) -> Result<Option<Orderbook>> {
         // - bs: Vec<[String; 3]>
         // channel_name: String
         // pair: String
-        let data: Data = serde_json::from_value(result[1].clone())?;
-        let mut tmp = KRAKEN.lock().unwrap();
-        let ob = if let Some(ob) = tmp.get_mut(key) {
-            ob
-        } else {
-            tmp.insert(key.clone(), Orderbook::new("kraken"));
-            tmp.get_mut(key).unwrap()
-        };
-        if data.bs.len() > 0 || data.r#as.len() > 0 {
-            ob.bid.clear();
-            ob.ask.clear();
-        }
-        for [price_str, quantity_str, _timestamp] in data.bs {
-            let price = BigDecimal::from_str(&price_str)?;
-            let quantity = BigDecimal::from_str(&quantity_str)?;
-            ob.insert(Side::Bid, price, quantity);
-        }
-        for v in data.b {
-            let price_str: &str = &v[0];
-            let quantity_str: &str = &v[1];
-            let price = BigDecimal::from_str(price_str)?;
-            let quantity = BigDecimal::from_str(quantity_str)?;
-            ob.insert(Side::Bid, price, quantity);
-        }
-        for [price_str, quantity_str, _timestamp] in data.r#as {
-            let price = BigDecimal::from_str(&price_str)?;
-            let quantity = BigDecimal::from_str(&quantity_str)?;
-            ob.insert(Side::Ask, price, quantity);
-        }
-        for v in data.a {
-            let price_str: &str = &v[0];
-            let quantity_str: &str = &v[1];
-            let price = BigDecimal::from_str(price_str)?;
-            let quantity = BigDecimal::from_str(quantity_str)?;
-            ob.insert(Side::Ask, price, quantity);
+
+        for r in result[1..result.len() - 2].into_iter() {
+            let data: Data = serde_json::from_value(r.clone())?;
+
+            if data.bs.len() > 0 || data.r#as.len() > 0 {
+                ob.bid.clear();
+                ob.ask.clear();
+            }
+            for [price_str, quantity_str, _timestamp] in data.bs {
+                let price = BigDecimal::from_str(&price_str)?;
+                let quantity = BigDecimal::from_str(&quantity_str)?;
+                ob.insert(Side::Bid, price, quantity);
+            }
+            for v in data.b {
+                let price_str: &str = &v[0];
+                let quantity_str: &str = &v[1];
+                let price = BigDecimal::from_str(price_str)?;
+                let quantity = BigDecimal::from_str(quantity_str)?;
+                ob.insert(Side::Bid, price, quantity);
+            }
+            for [price_str, quantity_str, _timestamp] in data.r#as {
+                let price = BigDecimal::from_str(&price_str)?;
+                let quantity = BigDecimal::from_str(&quantity_str)?;
+                ob.insert(Side::Ask, price, quantity);
+            }
+            for v in data.a {
+                let price_str: &str = &v[0];
+                let quantity_str: &str = &v[1];
+                let price = BigDecimal::from_str(price_str)?;
+                let quantity = BigDecimal::from_str(quantity_str)?;
+                ob.insert(Side::Ask, price, quantity);
+            }
         }
         // we're subscribing to book-25, so do cleanup here
         // the exchange/mod.rs side could only get the cloned item,
@@ -419,16 +421,11 @@ fn kraken_parser(raw: &str) -> Result<Option<Orderbook>> {
             #[serde(default)]
             v: [String; 2],
         }
-        let data: Data = serde_json::from_value(result[1].clone())?;
-        let mut tmp = KRAKEN.lock().unwrap();
-        let ob = if let Some(ob) = tmp.get_mut(key) {
-            ob
-        } else {
-            tmp.insert(key.clone(), Orderbook::new("kraken"));
-            tmp.get_mut(key).unwrap()
-        };
-        ob.volume = BigDecimal::from_str(&data.v[1])?;
-        ob.last_price = BigDecimal::from_str(&data.c[0])?;
+        for r in result[1..result.len() - 2].into_iter() {
+            let data: Data = serde_json::from_value(r.clone())?;
+            ob.volume = BigDecimal::from_str(&data.v[1])?;
+            ob.last_price = BigDecimal::from_str(&data.c[0])?;
+        }
         return Ok(Some(ob.clone()));
     }
     Ok(None)
@@ -625,6 +622,9 @@ mod tests {
             BigDecimal::from_str("31845").unwrap(),
             BigDecimal::from_str("1.5").unwrap(),
         );
+        if let Some(o) = out.as_ref() {
+            ob.timestamp = o.timestamp;
+        }
         assert_eq!(out, Some(ob));
     }
 }
