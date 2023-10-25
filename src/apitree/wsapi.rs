@@ -25,6 +25,8 @@ pub struct Api {
     pub heartbeat: Option<(u64, &'static str)>,
     // cleanup function when error
     pub clear: fn() -> (),
+    // reconnect to the endpoint every {value} seconds
+    pub reconnect_sec: Option<u64>,
 }
 
 impl Api {
@@ -439,6 +441,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
         parse: (binance_parser as ParseFunc),
         render_url: false,
         heartbeat: None,
+        reconnect_sec: None,
         clear: || {},
     },
     "binance_futures" => Api {
@@ -447,6 +450,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
         parse: (binance_parser as ParseFunc),
         render_url: false,
         heartbeat: None,
+        reconnect_sec: None,
         clear: || {},
     },
     "bitstamp" => Api {
@@ -455,6 +459,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
         parse: (bitstamp_parser as ParseFunc),
         render_url: false,
         heartbeat: None,
+        reconnect_sec: None,
         clear: || {},
     },
     "independentreserve" => Api {
@@ -463,6 +468,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
         parse: (indreserve_parser as ParseFunc),
         render_url: true,
         heartbeat: None,
+        reconnect_sec: None,
         clear: indreserve_clear,
     },
     "btcmarkets" => Api {
@@ -471,6 +477,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
         parse: (btcmarkets_parser as ParseFunc),
         render_url: false,
         heartbeat: None,
+        reconnect_sec: None,
         clear: btcmarkets_clear,
     },
     "coinjar" => Api {
@@ -484,6 +491,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
         // this will disconnect the websocket
         //heartbeat: Some((10, r#"{{"topic": "phoenix", "event": "heartbeat", "payload": {{}}, "ref": null}}"#)),
         heartbeat: None,
+        reconnect_sec: Some(30),
         clear: coinjar_clear,
     },
     "kraken" => Api {
@@ -494,6 +502,7 @@ pub static WS_APIMAP: phf::Map<&'static str, Api> = phf_map! {
         parse: (kraken_parser as ParseFunc),
         render_url: false,
         heartbeat: None,
+        reconnect_sec: None,
         clear: kraken_clear,
     }
 };

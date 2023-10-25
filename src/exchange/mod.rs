@@ -20,6 +20,7 @@ pub struct Exchange {
     pairs: Vec<String>,
     wait_secs: u64,
     heartbeat_ts: Option<Instant>,
+    reconnect_ts: Option<Instant>,
 }
 
 impl Exchange {
@@ -37,6 +38,7 @@ impl Exchange {
             pairs: vec![],
             wait_secs: 0,
             heartbeat_ts: None,
+            reconnect_ts: None,
         }
     }
     pub async fn connect(&mut self, pairs: Vec<ExchangeSetting>) -> Result<()> {
@@ -45,6 +47,7 @@ impl Exchange {
             .iter()
             .nth(0)
             .ok_or_else(|| anyhow!("should have at least one pair setting"))?;
+        // wait_secs here is only used in rest api
         self.wait_secs = if default_setup.wait_secs > 0 {
             default_setup.wait_secs
         } else {
@@ -116,8 +119,13 @@ impl Exchange {
             .ok_or_else(|| anyhow!("Not connect yet. Please run connect first"))?;
         let api = apitree::ws(&self.name)?;
         let (wait_secs, msg) = api.heartbeat.clone().unwrap_or_else(|| (0, ""));
+        let reconn_secs = api.reconnect_sec.clone().unwrap_or(0);
+        info!("reconn_secs: {}", reconn_secs);
         if self.heartbeat_ts.is_none() && wait_secs > 0 {
             self.heartbeat_ts = Some(Instant::now());
+        }
+        if self.reconnect_ts.is_none() && reconn_secs > 0 {
+            self.reconnect_ts = Some(Instant::now());
         }
         loop {
             // sending heartbeats
@@ -132,6 +140,13 @@ impl Exchange {
                     {
                         error!("heartbeat: {}", e);
                     }
+                }
+            }
+            if let Some(now) = self.reconnect_ts {
+                if reconn_secs < now.elapsed().as_secs() {
+                    // force close the connection
+                    info!("reconnect: {}", self.name);
+                    return Err(anyhow!("close {}", self.name));
                 }
             }
             if let Some(result) = result.next().await {
