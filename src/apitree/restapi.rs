@@ -25,12 +25,84 @@ impl Dummy {
                 endpoint: "https://api.btcmarkets.net",
                 orderbook: Box::new(|s| Box::pin(btcmarkets_orderbook(s))),
             }),
+            "coinspot" => Some(Api {
+                endpoint: "https://www.coinspot.com.au",
+                orderbook: Box::new(|s| Box::pin(coinspot_orderbook(s))),
+            }),
             _ => None,
         }
     }
 }
 
 pub static REST_APIMAP: Dummy = Dummy {};
+
+async fn coinspot_orderbook(pair: String) -> Result<Orderbook> {
+    let api = REST_APIMAP.get("coinspot").unwrap();
+    let endpoint = api.endpoint;
+    let api = format!("{}/pubapi/v2/orders/open/{}", endpoint, pair);
+    info!("calling {}...", api);
+
+    #[derive(Deserialize, Debug)]
+    struct Level {
+        amount: f64, // amount that was bought
+        rate: f64,   // latest buy/sell price for that coin
+    }
+    #[derive(Deserialize, Debug)]
+    struct OpenMarketOrders {
+        status: String,
+        message: String,
+        buyorders: Vec<Level>,
+        sellorders: Vec<Level>,
+    }
+    let response = reqwest::get(&api).await?;
+    let orders: OpenMarketOrders = response.json().await?;
+    info!("{:?}", orders);
+    if orders.status != "ok" {
+        return Err(anyhow!("{}: {}", orders.status, orders.message));
+    }
+
+    let mut ob = Orderbook::new("coinspot");
+
+    for lvl in orders.buyorders {
+        let price = BigDecimal::from_str(&format!("{}", lvl.rate))
+            .map_err(|e| anyhow!("parse price fail: {}", e))?;
+        let volume = BigDecimal::from_str(&format!("{}", lvl.amount))
+            .map_err(|e| anyhow!("volume price fail: {}", e))?;
+        ob.insert(Side::Bid, price, volume);
+    }
+    for lvl in orders.sellorders {
+        let price = BigDecimal::from_str(&format!("{}", lvl.rate))
+            .map_err(|e| anyhow!("parse price fail: {}", e))?;
+        let volume = BigDecimal::from_str(&format!("{}", lvl.amount))
+            .map_err(|e| anyhow!("parse volume fail: {}", e))?;
+        ob.insert(Side::Ask, price, volume);
+    }
+    #[derive(Deserialize, Debug)]
+    struct Price {
+        last: String,
+    }
+    #[derive(Deserialize, Debug)]
+    struct LatestPrice {
+        status: String,
+        #[serde(default)]
+        message: String,
+        prices: Price,
+    }
+
+    let api = format!("{}/pubapi/v2/latest/{}", endpoint, pair);
+    info!("calling {}...", api);
+    let response = reqwest::get(&api).await?;
+    let last_price: LatestPrice = response.json().await?;
+    if last_price.status != "ok" {
+        return Err(anyhow!("{}: {}", last_price.status, last_price.message));
+    }
+    ob.last_price = BigDecimal::from_str(&last_price.prices.last)
+        .map_err(|e| anyhow!("parse last price fail {}", e))?;
+
+    // since coinspot doesn't have any volume 24h information exposed,
+    // the volume will be always 0.
+    Ok(ob)
+}
 
 async fn btcmarkets_orderbook(pair: String) -> Result<Orderbook> {
     let api = REST_APIMAP.get("btcmarkets").unwrap();

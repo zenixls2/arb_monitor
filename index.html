@@ -11,7 +11,7 @@
 	  margin: auto;
 	}
     table {
-	  width: 960px;
+	  width: 1020px;
 	  table-layout: fixed;
 	}
 	th {
@@ -87,6 +87,7 @@
 	<th>BTCMarkets <input type="checkbox" id="btcmarkets" onclick="toggle('btcmarkets', this)" /></th>
 	<th>Coinjar <input type="checkbox" id="coinjar" onclick="toggle('coinjar', this)" /></th>
 	<th>Kraken <input type="checkbox" id="kraken" onclick="toggle('kraken', this)" /></th>
+	<th>Coinspot <input type="checkbox" id="coinspot" onclick="toggle('coinspot', this)" /></th>
   </tr>
 </thead>
 <tbody>
@@ -96,60 +97,70 @@
 	<td id="ba9"></td>
 	<td id="ca9"></td>
 	<td id="ka9"></td>
+	<td id="sa9"></td>
   </tr>
   <tr>
 	<td id="ia8"></td>
 	<td id="ba8"></td>
 	<td id="ca8"></td>
 	<td id="ka8"></td>
+	<td id="sa8"></td>
   </tr>
   <tr>
 	<td id="ia7"></td>
 	<td id="ba7"></td>
 	<td id="ca7"></td>
 	<td id="ka7"></td>
+	<td id="sa7"></td>
   </tr>
   <tr>
 	<td id="ia6"></td>
 	<td id="ba6"></td>
 	<td id="ca6"></td>
 	<td id="ka6"></td>
+	<td id="sa6"></td>
   </tr>
   <tr>
 	<td id="ia5"></td>
 	<td id="ba5"></td>
 	<td id="ca5"></td>
 	<td id="ka5"></td>
+	<td id="sa5"></td>
   </tr>
   <tr>
 	<td id="ia4"></td>
 	<td id="ba4"></td>
 	<td id="ca4"></td>
 	<td id="ka4"></td>
+	<td id="sa4"></td>
   </tr>
   <tr>
 	<td id="ia3"></td>
 	<td id="ba3"></td>
 	<td id="ca3"></td>
 	<td id="ka3"></td>
+	<td id="sa3"></td>
   </tr>
   <tr>
 	<td id="ia2"></td>
 	<td id="ba2"></td>
 	<td id="ca2"></td>
 	<td id="ka2"></td>
+	<td id="sa2"></td>
   </tr>
   <tr>
 	<td id="ia1"></td>
 	<td id="ba1"></td>
 	<td id="ca1"></td>
 	<td id="ka1"></td>
+	<td id="sa1"></td>
   </tr>
   <tr>
 	<td id="ia0"></td>
 	<td id="ba0"></td>
 	<td id="ca0"></td>
 	<td id="ka0"></td>
+	<td id="sa0"></td>
   </tr>
   <!-- last price -->
   <tr>
@@ -158,6 +169,7 @@
 	<td id="bl" class="lastprice"></td>
 	<td id="cl" class="lastprice"></td>
 	<td id="kl" class="lastprice"></td>
+	<td id="sl" class="lastprice"></td>
   </tr>
   <tr>
 	<td class="explain" rowspan="10">Bid Levels</td>
@@ -165,60 +177,70 @@
 	<td id="bb0"></td>
 	<td id="cb0"></td>
 	<td id="kb0"></td>
+	<td id="sb0"></td>
   </tr>
   <tr>
 	<td id="ib1"></td>
 	<td id="bb1"></td>
 	<td id="cb1"></td>
 	<td id="kb1"></td>
+	<td id="sb1"></td>
   </tr>
   <tr>
 	<td id="ib2"></td>
 	<td id="bb2"></td>
 	<td id="cb2"></td>
 	<td id="kb2"></td>
+	<td id="sb2"></td>
   </tr>
   <tr>
 	<td id="ib3"></td>
 	<td id="bb3"></td>
 	<td id="cb3"></td>
 	<td id="kb3"></td>
+	<td id="sb3"></td>
   </tr>
   <tr>
 	<td id="ib4"></td>
 	<td id="bb4"></td>
 	<td id="cb4"></td>
 	<td id="kb4"></td>
+	<td id="sb4"></td>
   </tr>
   <tr>
 	<td id="ib5"></td>
 	<td id="bb5"></td>
 	<td id="cb5"></td>
 	<td id="kb5"></td>
+	<td id="sb5"></td>
   </tr>
   <tr>
 	<td id="ib6"></td>
 	<td id="bb6"></td>
 	<td id="cb6"></td>
 	<td id="kb6"></td>
+	<td id="sb6"></td>
   </tr>
   <tr>
 	<td id="ib7"></td>
 	<td id="bb7"></td>
 	<td id="cb7"></td>
 	<td id="kb7"></td>
+	<td id="sb7"></td>
   </tr>
   <tr>
 	<td id="ib8"></td>
 	<td id="bb8"></td>
 	<td id="cb8"></td>
 	<td id="kb8"></td>
+	<td id="sb8"></td>
   </tr>
   <tr>
 	<td id="ib9"></td>
 	<td id="bb9"></td>
 	<td id="cb9"></td>
 	<td id="kb9"></td>
+	<td id="sb9"></td>
   </tr>
   <tr>
 	<td>Timestamp</td>
@@ -226,6 +248,7 @@
 	<td id="bt"></td>
 	<td id="ct"></td>
 	<td id="kt"></td>
+	<td id="st"></td>
   </tr>
   <tr>
 	<td>Volume(24h)</td>
@@ -233,6 +256,7 @@
 	<td id="bv"></td>
 	<td id="cv"></td>
 	<td id="kv"></td>
+	<td id="sv"></td>
   </tr>
 </tbody>
 </table>
@@ -258,6 +282,7 @@
 	btcmarkets: Cookies.get("bc_"+pair) === "true" || Cookies.get("bc_"+pair) === undefined,
 	coinjar: Cookies.get("cc_"+pair) === "true" || Cookies.get("cc_"+pair) === undefined,
 	kraken: Cookies.get("kc_"+pair) === "true" || Cookies.get("kc_"+pair) === undefined,
+	coinspot: Cookies.get("sc_"+pair) == "true" || Cookies.get("sc_"+pair) === undefined,
   };
   if (state.independentreserve) {
   	document.getElementById("independentreserve").setAttribute("checked", true);
@@ -270,6 +295,9 @@
   }
   if (state.kraken) {
 	document.getElementById("kraken").setAttribute("checked", true);
+  }
+  if (state.coinspot) {
+	document.getElementById("coinspot").setAttribute("checked", true);
   }
 
   // level1 alert sound
@@ -379,6 +407,7 @@
 		case "btcmarkets": return "b";
 		case "coinjar": return "c";
 		case "kraken": return "k";
+		case "coinspot": return "s";
 	}
   }
 
@@ -461,7 +490,7 @@
 	socket.addEventListener("message", (event) => {
 	  let obj = JSON.parse(event.data);
 	  // cleanup
-	  for (let e of ["i", "b", "c", "k"]) {
+	  for (let e of ["i", "b", "c", "k", "s"]) {
 		for (let i=0; i<10; i++) {
 		  document.getElementById(e + "a" + i).innerHTML = "";
 		  document.getElementById(e + "b" + i).innerHTML = "";
@@ -480,7 +509,7 @@
 	  for (let p in obj.last_price) {
 		document.getElementById(e2id(p) + "l").innerHTML = numeral(obj.last_price[p]).format(formatMap[pair].price);
 	  }
-	  let countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
+	  let countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0, 's': 0};
 	  let index = 0;
 	  let acc = 0.0; // accumulated volume
 	  for (let i=0; i<obj.bids.length; i++) {
@@ -519,7 +548,7 @@
 		  "<div class='col'>" +
 		  numeral(level.amount).format(formatMap[pair].volume) + "</div></div></div>";
 	  }
-	  countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0};
+	  countermap = {'i': 0, 'b': 0, 'c': 0, 'k': 0, 's': 0};
 	  index = 0;
 	  acc = 0.0;
 	  for (let i=0; i<obj.asks.length; i++) {

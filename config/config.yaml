@@ -1,8 +1,8 @@
 exchange_pair_map:
   #binance:
-  #- pair: btcusdt
+  #  - pair: btcusdt
   #bitstamp:
-  #- pair: btcusd
+  #  - pair: btcusd
   independentreserve:
     - pair: Xbt-aud
       ws_api: false
@@ -12,11 +12,17 @@ exchange_pair_map:
     #BTC-USDT is closed
   coinjar:
     - pair: BTCAUD
+  coinspot:
+    - pair: BTC/USDT
+      ws_api: false
+      wait_secs: 1
   kraken:
     - pair: XBT/AUD
 bind_addr: "127.0.0.1"
 server_addr: "127.0.0.1"
 server_port: 50051
+# disable the log file output. Stdout in systemctl will be in /var/log
+# and gets rotated
 log_path: "test.log"
 # Debug, Info, Warning, Error
 log_level: "Error"
