@@ -39,7 +39,7 @@ pub static REST_APIMAP: Dummy = Dummy {};
 async fn coinspot_orderbook(pair: String) -> Result<Orderbook> {
     let api = REST_APIMAP.get("coinspot").unwrap();
     let endpoint = api.endpoint;
-    let api = format!("{}/pubapi/v2/orders/open/{}", endpoint, pair);
+    let mut api = format!("{}/pubapi/v2/orders/open/{}", endpoint, pair);
     info!("calling {}...", api);
 
     #[derive(Deserialize, Debug)]
@@ -88,8 +88,16 @@ async fn coinspot_orderbook(pair: String) -> Result<Orderbook> {
         message: String,
         prices: Price,
     }
-
-    let api = format!("{}/pubapi/v2/latest/{}", endpoint, pair);
+    let [coin, market]: [&str; 2] = pair
+        .split("/")
+        .collect::<Vec<&str>>()
+        .try_into()
+        .map_err(|e| anyhow!("{:?}", e))?;
+    if market == "AUD" {
+        api = format!("{}/pubapi/v2/latest/{}", endpoint, coin);
+    } else {
+        api = format!("{}/pubapi/v2/latest/{}", endpoint, pair);
+    }
     info!("calling {}...", api);
     let response = reqwest::get(&api).await?;
     let last_price: LatestPrice = response.json().await?;
