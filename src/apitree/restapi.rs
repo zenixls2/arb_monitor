@@ -1,11 +1,20 @@
 use crate::orderbook::{Orderbook, Side};
 use anyhow::{anyhow, Result};
 use bigdecimal::BigDecimal;
-use futures_util::future::Future;
+use chrono::prelude::*;
+use chrono::Duration;
+use futures_util::future::{join3, Future};
 use log::info;
+use once_cell::sync::Lazy;
+use serde::de;
 use serde::Deserialize;
+use std::collections::BTreeMap;
+use std::fmt;
+use std::ops::Bound::{Excluded, Included};
+use std::ops::Sub;
 use std::pin::Pin;
 use std::str::FromStr;
+use std::sync::Mutex;
 
 pub struct Api {
     pub endpoint: &'static str,
@@ -36,10 +45,53 @@ impl Dummy {
 
 pub static REST_APIMAP: Dummy = Dummy {};
 
+struct NaiveDateTimeVisitor;
+
+impl<'de> de::Visitor<'de> for NaiveDateTimeVisitor {
+    type Value = NaiveDateTime;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "a string represents chrono::NaiveDateTime")
+    }
+
+    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        match NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S.%fZ") {
+            Ok(t) => Ok(t),
+            Err(_) => Err(de::Error::invalid_value(de::Unexpected::Str(s), &self)),
+        }
+    }
+}
+
+fn from_datestr<'de, D>(d: D) -> Result<NaiveDateTime, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    d.deserialize_str(NaiveDateTimeVisitor)
+}
+
+#[derive(Deserialize, Debug)]
+struct CoinspotTrade {
+    coin: String,
+    market: String,
+    amount: f64,
+    total: f64,
+    rate: f64,
+    #[serde(deserialize_with = "from_datestr")]
+    solddate: NaiveDateTime,
+}
+
+static COINSPOT_TRADES: Lazy<Mutex<BTreeMap<NaiveDateTime, CoinspotTrade>>> =
+    Lazy::new(|| Mutex::new(BTreeMap::new()));
+
 async fn coinspot_orderbook(pair: String) -> Result<Orderbook> {
     let api = REST_APIMAP.get("coinspot").unwrap();
     let endpoint = api.endpoint;
-    let mut api = format!("{}/pubapi/v2/orders/open/{}", endpoint, pair);
+    let mut ob = Orderbook::new("coinspot");
+
+    let api = format!("{}/pubapi/v2/orders/open/{}", endpoint, pair);
     info!("calling {}...", api);
 
     #[derive(Deserialize, Debug)]
@@ -54,29 +106,12 @@ async fn coinspot_orderbook(pair: String) -> Result<Orderbook> {
         buyorders: Vec<Level>,
         sellorders: Vec<Level>,
     }
-    let response = reqwest::get(&api).await?;
-    let orders: OpenMarketOrders = response.json().await?;
-    info!("{:?}", orders);
-    if orders.status != "ok" {
-        return Err(anyhow!("{}: {}", orders.status, orders.message));
-    }
+    let order_fut = async move {
+        let response = reqwest::get(&api).await?;
+        let orders: OpenMarketOrders = response.json().await?;
+        Result::<_, anyhow::Error>::Ok(orders)
+    };
 
-    let mut ob = Orderbook::new("coinspot");
-
-    for lvl in orders.buyorders {
-        let price = BigDecimal::from_str(&format!("{}", lvl.rate))
-            .map_err(|e| anyhow!("parse price fail: {}", e))?;
-        let volume = BigDecimal::from_str(&format!("{}", lvl.amount))
-            .map_err(|e| anyhow!("volume price fail: {}", e))?;
-        ob.insert(Side::Bid, price, volume);
-    }
-    for lvl in orders.sellorders {
-        let price = BigDecimal::from_str(&format!("{}", lvl.rate))
-            .map_err(|e| anyhow!("parse price fail: {}", e))?;
-        let volume = BigDecimal::from_str(&format!("{}", lvl.amount))
-            .map_err(|e| anyhow!("parse volume fail: {}", e))?;
-        ob.insert(Side::Ask, price, volume);
-    }
     #[derive(Deserialize, Debug)]
     struct Price {
         last: String,
@@ -93,22 +128,87 @@ async fn coinspot_orderbook(pair: String) -> Result<Orderbook> {
         .collect::<Vec<&str>>()
         .try_into()
         .map_err(|e| anyhow!("{:?}", e))?;
-    if market == "AUD" {
-        api = format!("{}/pubapi/v2/latest/{}", endpoint, coin);
+    let api = if market == "AUD" {
+        format!("{}/pubapi/v2/latest/{}", endpoint, coin)
     } else {
-        api = format!("{}/pubapi/v2/latest/{}", endpoint, pair);
-    }
+        format!("{}/pubapi/v2/latest/{}", endpoint, pair)
+    };
     info!("calling {}...", api);
-    let response = reqwest::get(&api).await?;
-    let last_price: LatestPrice = response.json().await?;
+    let price_fut = async move {
+        let response = reqwest::get(&api).await?;
+        let last_price: LatestPrice = response.json().await?;
+        Result::<_, anyhow::Error>::Ok(last_price)
+    };
+
+    #[derive(Deserialize, Debug)]
+    struct Trades {
+        status: String,
+        #[serde(default)]
+        message: String,
+        buyorders: Vec<CoinspotTrade>,
+        sellorders: Vec<CoinspotTrade>,
+    }
+
+    let api = format!("{}/pubapi/v2/orders/completed/{}", endpoint, pair);
+    info!("calling {}...", api);
+    let trade_fut = async move {
+        let response = reqwest::get(&api).await?;
+        let trades: Trades = response.json().await?;
+        Result::<_, anyhow::Error>::Ok(trades)
+    };
+    let (orders_r, last_price_r, trade_r) = join3(order_fut, price_fut, trade_fut).await;
+    let orders = orders_r?;
+    let last_price = last_price_r?;
+    let trades = trade_r?;
+
+    if trades.status != "ok" {
+        return Err(anyhow!("trade {} {}", trades.status, trades.message));
+    }
+    let mut total_amount = 0.;
+    {
+        let mut tmp = COINSPOT_TRADES.lock().unwrap();
+        for trade in trades.buyorders {
+            tmp.insert(trade.solddate, trade);
+        }
+        let now = Utc::now().naive_utc();
+        let past = now.sub(Duration::hours(24));
+        for (_, &ref trade) in tmp.range((Excluded(&past), Included(&now))) {
+            total_amount += trade.amount;
+        }
+        *tmp = tmp.split_off(&past);
+    }
+    ob.volume = BigDecimal::from_str(&format!("{}", total_amount))
+        .map_err(|e| anyhow!("parse volume fail: {:?}", e))?;
+
+    info!("{:?}", orders);
+    if orders.status != "ok" {
+        return Err(anyhow!("orders {}: {}", orders.status, orders.message));
+    }
+    for lvl in orders.buyorders {
+        let price = BigDecimal::from_str(&format!("{}", lvl.rate))
+            .map_err(|e| anyhow!("parse price fail: {}", e))?;
+        let volume = BigDecimal::from_str(&format!("{}", lvl.amount))
+            .map_err(|e| anyhow!("volume price fail: {}", e))?;
+        ob.insert(Side::Bid, price, volume);
+    }
+    for lvl in orders.sellorders {
+        let price = BigDecimal::from_str(&format!("{}", lvl.rate))
+            .map_err(|e| anyhow!("parse price fail: {}", e))?;
+        let volume = BigDecimal::from_str(&format!("{}", lvl.amount))
+            .map_err(|e| anyhow!("parse volume fail: {}", e))?;
+        ob.insert(Side::Ask, price, volume);
+    }
+
     if last_price.status != "ok" {
-        return Err(anyhow!("{}: {}", last_price.status, last_price.message));
+        return Err(anyhow!(
+            "last_price {}: {}",
+            last_price.status,
+            last_price.message
+        ));
     }
     ob.last_price = BigDecimal::from_str(&last_price.prices.last)
         .map_err(|e| anyhow!("parse last price fail {}", e))?;
 
-    // since coinspot doesn't have any volume 24h information exposed,
-    // the volume will be always 0.
     Ok(ob)
 }
 

@@ -15,6 +15,7 @@ actix-web-codegen = "4.2.2"
 anyhow = "1.0.75"
 awc = { version = "3.1.1", features = ["rustls"] }
 bigdecimal = "0.4.1"
+chrono = { version = "0.4.31", features = ["serde"] }
 clap = { version = "4.4.0", features = ["derive"] }
 fern = "0.6.2"
 formatx = "0.2.1"
