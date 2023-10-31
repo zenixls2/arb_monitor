@@ -16,9 +16,11 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Mutex;
 
+type OrderbookBoxedFuture = Box<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<Orderbook>>>>>;
+
 pub struct Api {
     pub endpoint: &'static str,
-    pub orderbook: Box<dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<Orderbook>>>>>,
+    pub orderbook: OrderbookBoxedFuture,
 }
 
 pub struct Dummy {}
@@ -74,11 +76,11 @@ where
 
 #[derive(Deserialize, Debug)]
 struct CoinspotTrade {
-    coin: String,
-    market: String,
+    //coin: String,
+    //market: String,
     amount: f64,
-    total: f64,
-    rate: f64,
+    //total: f64,
+    //rate: f64,
     #[serde(deserialize_with = "from_datestr")]
     solddate: NaiveDateTime,
 }
@@ -124,7 +126,7 @@ async fn coinspot_orderbook(pair: String) -> Result<Orderbook> {
         prices: Price,
     }
     let [coin, market]: [&str; 2] = pair
-        .split("/")
+        .split('/')
         .collect::<Vec<&str>>()
         .try_into()
         .map_err(|e| anyhow!("{:?}", e))?;
@@ -146,7 +148,8 @@ async fn coinspot_orderbook(pair: String) -> Result<Orderbook> {
         #[serde(default)]
         message: String,
         buyorders: Vec<CoinspotTrade>,
-        sellorders: Vec<CoinspotTrade>,
+        // this is not used. Volume on buy == volume on sell
+        // sellorders: Vec<CoinspotTrade>,
     }
 
     let api = format!("{}/pubapi/v2/orders/completed/{}", endpoint, pair);
@@ -172,7 +175,7 @@ async fn coinspot_orderbook(pair: String) -> Result<Orderbook> {
         }
         let now = Utc::now().naive_utc();
         let past = now.sub(Duration::hours(24));
-        for (_, &ref trade) in tmp.range((Excluded(&past), Included(&now))) {
+        for (_, trade) in tmp.range((Excluded(&past), Included(&now))) {
             total_amount += trade.amount;
         }
         *tmp = tmp.split_off(&past);

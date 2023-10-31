@@ -44,8 +44,7 @@ impl Exchange {
     pub async fn connect(&mut self, pairs: Vec<ExchangeSetting>) -> Result<()> {
         self.pairs = pairs.iter().map(|e| e.pair.clone()).collect();
         let default_setup = pairs
-            .iter()
-            .nth(0)
+            .get(0)
             .ok_or_else(|| anyhow!("should have at least one pair setting"))?;
         // wait_secs here is only used in rest api
         self.wait_secs = if default_setup.wait_secs > 0 {
@@ -103,7 +102,7 @@ impl Exchange {
             let level = self.level;
             sleep(Duration::from_secs(self.wait_secs)).await;
             // only able to handle one pair
-            for pair in self.pairs.iter() {
+            if let Some(pair) = self.pairs.first() {
                 return (apitree::rest(&self.name)?.orderbook)(pair.clone())
                     .await
                     .map(move |mut e| {
@@ -118,8 +117,8 @@ impl Exchange {
             .as_mut()
             .ok_or_else(|| anyhow!("Not connect yet. Please run connect first"))?;
         let api = apitree::ws(&self.name)?;
-        let (wait_secs, msg) = api.heartbeat.clone().unwrap_or_else(|| (0, ""));
-        let reconn_secs = api.reconnect_sec.clone().unwrap_or(0);
+        let (wait_secs, msg) = api.heartbeat.unwrap_or((0, ""));
+        let reconn_secs = api.reconnect_sec.unwrap_or(0);
         info!("reconn_secs: {}", reconn_secs);
         if self.heartbeat_ts.is_none() && wait_secs > 0 {
             self.heartbeat_ts = Some(Instant::now());

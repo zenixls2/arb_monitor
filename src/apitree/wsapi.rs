@@ -289,7 +289,7 @@ fn coinjar_parser(raw: &str) -> Result<Option<Orderbook>> {
             #[serde(default)]
             last: String,
         }
-        let result: Payload = serde_json::from_value(result.payload.clone())?;
+        let result: Payload = serde_json::from_value(result.payload)?;
         ob.volume = BigDecimal::from_str(&result.volume_24h)?;
         ob.last_price = BigDecimal::from_str(&result.last)?;
         return Ok(Some(ob.clone()));
@@ -312,7 +312,7 @@ fn coinjar_parser(raw: &str) -> Result<Option<Orderbook>> {
             #[serde(default)]
             asks: Vec<[String; 2]>,
         }
-        let result: Payload = serde_json::from_value(result.payload.clone())?;
+        let result: Payload = serde_json::from_value(result.payload)?;
         for [price_str, quantity_str] in result.bids {
             let price = BigDecimal::from_str(&price_str)?;
             let quantity = BigDecimal::from_str(&quantity_str)?;
@@ -373,10 +373,10 @@ fn kraken_parser(raw: &str) -> Result<Option<Orderbook>> {
         // channel_name: String
         // pair: String
 
-        for r in result[1..result.len() - 2].into_iter() {
+        for r in result[1..result.len() - 2].iter() {
             let data: Data = serde_json::from_value(r.clone())?;
 
-            if data.bs.len() > 0 || data.r#as.len() > 0 {
+            if !data.bs.is_empty() || !data.r#as.is_empty() {
                 ob.bid.clear();
                 ob.ask.clear();
             }
@@ -410,7 +410,7 @@ fn kraken_parser(raw: &str) -> Result<Option<Orderbook>> {
         // so the orderbook didn't explicitly trim the orderbook.
         ob.trim(25);
         return Ok(Some(ob.clone()));
-    } else if channel_name == "ticker".to_string() {
+    } else if channel_name == *"ticker" {
         // data:
         // - a: best ask [3]
         // - b: best bid [3]
@@ -423,7 +423,7 @@ fn kraken_parser(raw: &str) -> Result<Option<Orderbook>> {
             #[serde(default)]
             v: [String; 2],
         }
-        for r in result[1..result.len() - 2].into_iter() {
+        for r in result[1..result.len() - 2].iter() {
             let data: Data = serde_json::from_value(r.clone())?;
             ob.volume = BigDecimal::from_str(&data.v[1])?;
             ob.last_price = BigDecimal::from_str(&data.c[0])?;
@@ -576,6 +576,9 @@ mod tests {
             BigDecimal::from_str("29738").unwrap(),
             BigDecimal::from_str("0.67255217").unwrap(),
         );
+        if let Some(b) = out.as_ref() {
+            ob.timestamp = b.timestamp;
+        }
         assert_eq!(out, Some(ob));
     }
     #[test]

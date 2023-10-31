@@ -51,14 +51,9 @@ impl Orderbook {
 
         let best_bid = self.bid.last_key_value().map(|(p, _)| p);
         let best_ask = self.ask.first_key_value().map(|(p, _)| p);
-        if best_bid.is_some() && best_ask.is_some() {
-            if best_bid.unwrap() > best_ask.unwrap() {
-                error!(
-                    "{} crossed!, {}, {}",
-                    self.name,
-                    best_bid.unwrap(),
-                    best_ask.unwrap()
-                );
+        if let (Some(bb), Some(ba)) = (best_bid, best_ask) {
+            if bb > ba {
+                error!("{} crossed!, {}, {}", self.name, bb, ba);
             }
         }
     }
